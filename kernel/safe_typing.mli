@@ -100,6 +100,9 @@ val add_constraints :
 (** Settin the strongly constructive or classical logical engagement *)
 val set_engagement : Declarations.engagement -> safe_transformer0
 
+(** Dependent match *)
+val disable_dependent_match : safe_transformer0
+
 (** {6 Interactive module functions } *)
 
 val start_module : Label.t -> module_path safe_transformer

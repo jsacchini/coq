@@ -180,6 +180,11 @@ let check_engagement env c =
   | _ -> ()
 
 
+(** {6 Dependent match} *)
+let disable_dependent_match senv =
+  { senv with env = Environ.disable_dependent_match senv.env }
+(* TODO: do we need to add a field to safe environment? -jls *)
+
 (** {6 Stm machinery } *)
 
 let sideff_of_con env c = SEsubproof (c, Environ.lookup_constant c env.env)

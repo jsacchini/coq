@@ -56,6 +56,10 @@ let named_context env = env.env_named_context
 let named_context_val env = env.env_named_context,env.env_named_vals
 let rel_context env = env.env_rel_context
 
+let disable_dependent_match env =
+  { env with env_dependent_match = false }
+let is_dependent_match_allowed env = env.env_dependent_match
+
 let empty_context env =
   match env.env_rel_context, env.env_named_context with
   | [], [] -> true

@@ -2751,8 +2751,12 @@ let compile_cases loc style (typing_fun, evdref) tycon env (predopt, tomatchl, e
   let extract_index_defs (_, (_, _, idd)) = idd in
 
   if is_extended_match tomatchl predopt eqns then
-    compile_extended_cases loc style (typing_fun, evdref)
-      tycon env (predopt, tomatchl, eqns)
+    if is_dependent_match_allowed env then
+      compile_extended_cases loc style (typing_fun, evdref)
+        tycon env (predopt, tomatchl, eqns)
+    else
+      user_err_loc (loc, "",
+                    str "Dependent match disabled by command-line option.")
   else
   (* If it's not a extended match, we check that there is no index definition *)
   if List.exists has_index_def tomatchl

@@ -28,6 +28,9 @@ val named_context : unit -> Context.named_context
 (** Changing the (im)predicativity of the system *)
 val set_engagement : Declarations.engagement -> unit
 
+(** Dependent match *)
+val disable_dependent_match : unit -> unit
+
 (** Extra universe constraints *)
 val add_constraints : Univ.constraints -> unit
 

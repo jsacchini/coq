@@ -210,6 +210,10 @@ val push_constraints_to_env : 'a Univ.constrained -> env -> env
 
 val set_engagement : engagement -> env -> env
 
+(** Dependent match *)
+val disable_dependent_match : env -> env
+val is_dependent_match_allowed : env -> bool
+
 (** {6 Sets of referred section variables }
    [global_vars_set env c] returns the list of [id]'s occurring either
    directly as [Var id] in [c] or indirectly as a section variable

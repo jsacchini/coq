@@ -68,6 +68,9 @@ let set_engagement c = engagement := Some c
 let engage () =
   match !engagement with Some c -> Global.set_engagement c | None -> ()
 
+let disable_dependent_match () =
+  Global.disable_dependent_match ()
+
 let set_batch_mode () = batch_mode := true
 
 let toplevel_default_name = DirPath.make [Id.of_string "Top"]
@@ -391,6 +394,7 @@ let parse_args arglist =
     |"-h"|"-H"|"-?"|"-help"|"--help" -> usage ()
     |"-ideslave" -> toploop := Some "coqidetop"; Flags.ide_slave := true
     |"-impredicative-set" -> set_engagement Declarations.ImpredicativeSet
+    |"-disable-dependent-match" -> disable_dependent_match ()
     |"-indices-matter" -> Indtypes.enforce_indices_matter ()
     |"-just-parsing" -> Vernac.just_parsing := true
     |"-m"|"--memory" -> memory_stat := true

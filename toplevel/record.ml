@@ -56,12 +56,12 @@ let interp_fields_evars evars env impls_env nots l =
 
 let compute_constructor_level evars env l =
   List.fold_right (fun (n,b,t as d) (env, univ) ->
-    let univ = 
-      if b = None then 
+    let univ =
+      if b = None then
 	let s = Retyping.get_sort_of env evars t in
-	  Univ.sup (univ_of_sort s) univ 
+	  Univ.sup (univ_of_sort s) univ
       else univ
-    in (push_rel d env, univ)) 
+    in (push_rel d env, univ))
     l (env, Univ.type0m_univ)
 
 let binder_of_decl = function

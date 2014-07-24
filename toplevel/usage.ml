@@ -63,6 +63,8 @@ let print_usage_channel co command =
 \n  -dump-glob f           dump globalizations in file f (to be used by coqdoc)\
 \n  -with-geoproof (yes|no) to (de)activate special functions for Geoproof within Coqide (default is yes)\
 \n  -impredicative-set     set sort Set impredicative\
+\n  -disable-dependent-match\
+\n                         disable match extension for dependent pattern matching\
 \n  -indices-matter        levels of indices (and nonuniform parameters) contribute to the level of inductives\
 \n  -xml                   export XML files either to the hierarchy rooted in\
 \n                         the directory $COQ_XML_LIBRARY_ROOT (if set) or to\
