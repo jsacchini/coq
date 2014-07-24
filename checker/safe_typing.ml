@@ -24,6 +24,9 @@ let get_env () = !genv
 let set_engagement c =
   genv := set_engagement c !genv
 
+let disable_termination_checking () =
+  genv := disable_termination_checking !genv
+
 (* full_add_module adds module with universes and constraints *)
 let full_add_module dp mb univs digest =
   let env = !genv in

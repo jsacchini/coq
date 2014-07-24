@@ -1106,6 +1106,8 @@ let check_fix env ((nvect,_),(names,_,bodies as _recdef) as fix) =
       error_ill_formed_rec_body fixenv err names i
   done
 
+let check_fix_if_termination_checking _ _ = ()
+
 (*
 let cfkey = Profile.declare_profile "check_fix";;
 let check_fix env fix = Profile.profile3 cfkey check_fix env fix;;
@@ -1221,3 +1223,5 @@ let check_cofix env (bodynum,(names,types,bodies as recdef)) =
     with CoFixGuardError (errenv,err) ->
       error_ill_formed_rec_body errenv err names i
   done
+
+let check_cofix_if_termination_checking _ _ = ()

@@ -14,6 +14,9 @@ open Environ
 val get_env : unit -> env
 
 val set_engagement : engagement -> unit
+
+val disable_termination_checking : unit -> unit
+
 val import         :
   CUnix.physical_path -> compiled_library -> Univ.constraints -> Cic.vodigest -> unit
 val unsafe_import  :

@@ -144,7 +144,8 @@ let find_mutually_recursive_statements thms =
       match ordered_same_indccl, common_same_indhyp with
       | indccl::rest, _ ->
 	  assert (List.is_empty rest);
-          (* One occ. of common coind ccls and no common inductive hyps *)
+          (* One occ. %%
+of common coind ccls and no common inductive hyps *)
 	  if not (List.is_empty common_same_indhyp) then
 	    if_verbose msg_info (str "Assuming mutual coinductive statements.");
 	  flush_all ();

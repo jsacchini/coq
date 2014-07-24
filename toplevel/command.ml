@@ -1153,6 +1153,7 @@ let do_fixpoint local poly l =
     let fix = interp_fixpoint fixl ntns in
     let possible_indexes =
       List.map compute_possible_guardness_evidences (pi3 fix) in
+
     declare_fixpoint local poly fix possible_indexes ntns
 
 let do_cofixpoint local poly l =

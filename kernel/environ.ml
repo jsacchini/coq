@@ -56,6 +56,10 @@ let named_context env = env.env_named_context
 let named_context_val env = env.env_named_context,env.env_named_vals
 let rel_context env = env.env_rel_context
 
+let disable_termination_checking env =
+  { env with env_termination_checking = false }
+let is_termination_checking env = env.env_termination_checking
+
 let empty_context env =
   match env.env_rel_context, env.env_named_context with
   | [], [] -> true

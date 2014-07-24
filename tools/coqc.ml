@@ -96,6 +96,7 @@ let parse_args () =
       |"-impredicative-set"|"-vm"|"-no-native-compiler"
       |"-verbose-compat-notations"|"-no-compat-notations"
       |"-indices-matter"|"-quick"
+      |"-disable-termination-checking"
       as o) :: rem ->
 	parse (cfiles,o::args) rem
 

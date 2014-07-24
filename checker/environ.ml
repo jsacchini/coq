@@ -21,7 +21,8 @@ type env = {
     env_globals       : globals;
     env_rel_context   : rel_context;
     env_stratification : stratification;
-    env_imports : Cic.vodigest MPmap.t }
+    env_imports : Cic.vodigest MPmap.t;
+    env_termination_checking : bool }
 
 let empty_env = {
   env_globals =
@@ -34,7 +35,8 @@ let empty_env = {
   env_stratification =
   { env_universes = Univ.initial_universes;
     env_engagement = None};
-  env_imports = MPmap.empty }
+  env_imports = MPmap.empty;
+  env_termination_checking = true }
 
 let engagement env = env.env_stratification.env_engagement
 let universes env = env.env_stratification.env_universes
@@ -46,6 +48,11 @@ let set_engagement c env =
     | None ->
         { env with env_stratification =
           { env.env_stratification with env_engagement = Some c } }
+
+let disable_termination_checking env =
+  { env with env_termination_checking = false }
+
+let is_termination_checking env = env.env_termination_checking
 
 (* Digests *)
 

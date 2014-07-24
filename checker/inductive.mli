@@ -51,6 +51,9 @@ val check_case_info : env -> inductive -> case_info -> unit
 val check_fix : env -> fixpoint -> unit
 val check_cofix : env -> cofixpoint -> unit
 
+val check_fix_if_termination_checking : env -> fixpoint -> unit
+val check_cofix_if_termination_checking : env -> cofixpoint -> unit
+
 (*s Support for sort-polymorphic inductive types *)
 
 val type_of_inductive_knowing_parameters :

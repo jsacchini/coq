@@ -28,6 +28,9 @@ val named_context : unit -> Context.named_context
 (** Changing the (im)predicativity of the system *)
 val set_engagement : Declarations.engagement -> unit
 
+(** Termination checking *)
+val disable_termination_checking : unit -> unit
+
 (** Variables, Local definitions, constants, inductive types *)
 
 val push_named_assum : (Id.t * Constr.types) Univ.in_universe_context_set -> unit

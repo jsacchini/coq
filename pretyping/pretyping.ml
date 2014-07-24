@@ -69,7 +69,7 @@ let search_guard loc env possible_indexes fixdefs =
   if List.for_all is_singleton possible_indexes then
     let indexes = Array.of_list (List.map List.hd possible_indexes) in
     let fix = ((indexes, 0),fixdefs) in
-    (try check_fix env fix
+    (try check_fix_if_termination_checking env fix
      with reraise ->
        let e = Errors.push reraise in Loc.raise loc e);
     indexes
@@ -472,7 +472,8 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
 			     vn)
 	  in
 	  let fixdecls = (names,ftys,fdefs) in
-	  let indexes = search_guard loc env possible_indexes fixdecls in
+	  let indexes =
+            search_guard loc env possible_indexes fixdecls in
 	    make_judge (mkFix ((indexes,i),fixdecls)) ftys.(i)
 	| GCoFix i ->
 	  let cofix = (i,(names,ftys,fdefs)) in

@@ -53,7 +53,8 @@ type env = {
     env_nb_rel        : int;
     env_stratification : stratification;
     env_conv_oracle   : Conv_oracle.oracle;
-    retroknowledge : Retroknowledge.retroknowledge }
+    retroknowledge : Retroknowledge.retroknowledge;
+    env_termination_checking : bool }
 
 type named_context_val = named_context * named_vals
 

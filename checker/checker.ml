@@ -142,6 +142,8 @@ let set_engagement c = engagement := Some c
 let engage () =
   match !engagement with Some c -> Safe_typing.set_engagement c | None -> ()
 
+let disable_termination_checking () =
+  Safe_typing.disable_termination_checking ()
 
 let admit_list = ref ([] : section_path list)
 let add_admit s =
@@ -194,6 +196,9 @@ let print_usage_channel co command =
 \n  -silent                disable trace of constants being checked\
 \n\
 \n  -impredicative-set     set sort Set impredicative\
+\n\
+\n  -disable-termination-checking\
+\n                         disable termination and productivity checking\
 \n\
 \n  -h, --help             print this list of options\
 \n"

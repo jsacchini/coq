@@ -31,7 +31,7 @@ let conv_leq_vecti env v1 v2 =
     v1
     v2
 
-let check_constraints cst env = 
+let check_constraints cst env =
   if Environ.check_constraints cst env then ()
   else error_unsatisfied_constraints env cst
 
@@ -187,7 +187,7 @@ let judge_of_constant env cst =
 let type_of_projection env (cst,u) =
   let cb = lookup_constant cst env in
   match cb.const_proj with
-  | Some pb -> 
+  | Some pb ->
     if cb.const_polymorphic then
       let mib,_ = lookup_mind_specif env (pb.proj_ind,0) in
       let subst = make_inductive_subst mib u in
@@ -332,7 +332,7 @@ let judge_of_inductive_knowing_parameters env (ind,u as indu) args =
   let c = mkIndU indu in
   let (mib,mip) as spec = lookup_mind_specif env ind in
   check_hyps_inclusion env c mib.mind_hyps;
-  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters 
+  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters
     env (spec,u) args
   in
     check_constraints cst env;
@@ -420,7 +420,7 @@ let rec execute env cstr =
     (* Atomic terms *)
     | Sort (Prop c) ->
       judge_of_prop_contents c
-	
+
     | Sort (Type u) ->
       judge_of_type u
 
@@ -432,7 +432,7 @@ let rec execute env cstr =
 
     | Const c ->
       judge_of_constant env c
-	
+
     | Proj (p, c) ->
         let cj = execute env c in
           judge_of_projection env p cj
@@ -497,15 +497,15 @@ let rec execute env cstr =
     | Fix ((vn,i as vni),recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let fix = (vni,recdef') in
-        check_fix env fix;
+        check_fix_if_termination_checking env fix;
 	make_judge (mkFix fix) fix_ty
-	  
+
     | CoFix (i,recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let cofix = (i,recdef') in
-        check_cofix env cofix;
+        check_cofix_if_termination_checking env cofix;
 	(make_judge (mkCoFix cofix) fix_ty)
-	  
+
     (* Partial proofs: unsupported by the kernel *)
     | Meta _ ->
 	anomaly (Pp.str "the kernel does not support metavariables")

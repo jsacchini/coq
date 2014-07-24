@@ -83,6 +83,9 @@ let add_modtype id me inl = globalize (Safe_typing.add_modtype (i2l id) me inl)
 let add_module id me inl = globalize (Safe_typing.add_module (i2l id) me inl)
 let add_include me ismod inl = globalize (Safe_typing.add_include me ismod inl)
 
+let disable_termination_checking () =
+  globalize0 Safe_typing.disable_termination_checking
+
 let start_module id = globalize (Safe_typing.start_module (i2l id))
 let start_modtype id = globalize (Safe_typing.start_modtype (i2l id))
 

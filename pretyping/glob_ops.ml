@@ -123,7 +123,7 @@ and fix_kind_eq k1 k2 = match k1, k2 with
   let eq (i1, o1) (i2, o2) =
     Option.equal Int.equal i1 i2 && fix_recursion_order_eq o1 o2
   in
-  Int.equal i1 i2 && Array.equal eq a1 a1
+  Int.equal i1 i2 && Array.equal eq a1 a2
 | GCoFix i1, GCoFix i2 -> Int.equal i1 i2
 | _ -> false
 

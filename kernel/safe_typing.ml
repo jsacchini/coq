@@ -179,6 +179,11 @@ let check_engagement env c =
     Errors.error "Needs option -impredicative-set."
   | _ -> ()
 
+(** {6 Termination checking} *)
+let disable_termination_checking senv =
+  { senv with env = Environ.disable_termination_checking senv.env }
+(* TODO: do we need to add a field to safe environment *)
+(* 2014-06-30T13:22:02Z -jls *)
 
 (** {6 Stm machinery } *)
 
