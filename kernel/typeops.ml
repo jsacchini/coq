@@ -31,7 +31,21 @@ let conv_leq_vecti env v1 v2 =
     v1
     v2
 
-let check_constraints cst env = 
+let conv_leq_vecti_opt env v1 v2 = (* -jls *)
+  Array.fold_left2_i
+    (fun i _ t1 t2 ->
+      match t1, t2 with
+      | Some t1, Some t2 -> begin
+        try conv_leq false env t1 t2
+        with NotConvertible -> raise (NotConvertibleVect i)
+        end
+      | None, None -> ()
+      | _, _ -> raise (NotConvertibleVect i))
+    ()
+    v1
+    v2
+
+let check_constraints cst env =
   if Environ.check_constraints cst env then ()
   else error_unsatisfied_constraints env cst
 
@@ -187,7 +201,7 @@ let judge_of_constant env cst =
 let type_of_projection env (cst,u) =
   let cb = lookup_constant cst env in
   match cb.const_proj with
-  | Some pb -> 
+  | Some pb ->
     if cb.const_polymorphic then
       let mib,_ = lookup_mind_specif env (pb.proj_ind,0) in
       let subst = make_inductive_subst mib u in
@@ -332,7 +346,7 @@ let judge_of_inductive_knowing_parameters env (ind,u as indu) args =
   let c = mkIndU indu in
   let (mib,mip) as spec = lookup_mind_specif env ind in
   check_hyps_inclusion env c mib.mind_hyps;
-  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters 
+  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters
     env (spec,u) args
   in
     check_constraints cst env;
@@ -361,24 +375,27 @@ let judge_of_constructor env (c,u as cu) =
 
 (* Case. *)
 
-let check_branch_types env (ind,u) cj (lfj,explft) =
-  try conv_leq_vecti env (Array.map j_type lfj) explft
+let check_branch_types env (ind,u) idxj cj (lfj,explft) =
+  try conv_leq_vecti_opt env (Array.map (Option.map j_type) lfj) explft
   with
       NotConvertibleVect i ->
-        error_ill_formed_branch env cj.uj_val ((ind,i+1),u) lfj.(i).uj_type explft.(i)
+        error_ill_formed_branch env cj.uj_val ((ind,i+1),u)
+          ((Option.get lfj.(i)).uj_type) (Option.get explft.(i))
+          (* TODO: possibly unsafe get -jls *)
     | Invalid_argument _ ->
         error_number_branches env cj (Array.length explft)
 
-let judge_of_case env ci pj cj lfj =
+let judge_of_case env ci pj idxj cj lfj =
   let (pind, _ as indspec) =
     try find_rectype env cj.uj_type
     with Not_found -> error_case_not_inductive env cj in
   let _ = check_case_info env pind ci in
   let (bty,rslty) =
-    type_case_branches env indspec pj cj.uj_val in
-  let () = check_branch_types env pind cj (lfj,bty) in
-  ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, cj.uj_val,
-                       Array.map j_val lfj);
+    type_case_branches env indspec pj [||] cj.uj_val in
+    (* TODO: check indices -jls *)
+  let () = check_branch_types env pind idxj cj (lfj,Array.map (fun x -> Some x) bty) in
+  ({ uj_val  = mkCase (ci, (*nf_betaiota*) pj.uj_val, [||], cj.uj_val,
+                       Array.map (Option.map j_val) lfj);
      uj_type = rslty })
 
 let judge_of_projection env p cj =
@@ -420,7 +437,7 @@ let rec execute env cstr =
     (* Atomic terms *)
     | Sort (Prop c) ->
       judge_of_prop_contents c
-	
+
     | Sort (Type u) ->
       judge_of_type u
 
@@ -432,7 +449,7 @@ let rec execute env cstr =
 
     | Const c ->
       judge_of_constant env c
-	
+
     | Proj (p, c) ->
         let cj = execute env c in
           judge_of_projection env p cj
@@ -488,24 +505,25 @@ let rec execute env cstr =
     | Construct c ->
       judge_of_constructor env c
 
-    | Case (ci,p,c,lf) ->
+    | Case (ci,p,i,c,lf) ->
         let cj = execute env c in
         let pj = execute env p in
-        let lfj = execute_array env lf in
-          judge_of_case env ci pj cj lfj
+        let ij = execute_array env i in
+        let lfj = execute_array_opt env lf in
+          judge_of_case env ci pj ij cj lfj
 
     | Fix ((vn,i as vni),recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let fix = (vni,recdef') in
         check_fix env fix;
 	make_judge (mkFix fix) fix_ty
-	  
+
     | CoFix (i,recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let cofix = (i,recdef') in
         check_cofix env cofix;
 	(make_judge (mkCoFix cofix) fix_ty)
-	  
+
     (* Partial proofs: unsupported by the kernel *)
     | Meta _ ->
 	anomaly (Pp.str "the kernel does not support metavariables")
@@ -527,6 +545,7 @@ and execute_recdef env (names,lar,vdef) i =
     (lara.(i),(names,lara,vdefv))
 
 and execute_array env = Array.map (execute env)
+and execute_array_opt env = Array.map (Option.map (execute env))
 
 (* Derived functions *)
 let infer env constr =

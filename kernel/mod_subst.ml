@@ -315,13 +315,13 @@ let subst_con sub cst =
 let subst_con_kn sub con =
   subst_con sub (con,Univ.Instance.empty)
 
-let subst_pcon sub (con,u as pcon) = 
-  try let con', can = subst_con0 sub pcon in 
+let subst_pcon sub (con,u as pcon) =
+  try let con', can = subst_con0 sub pcon in
 	con',u
   with No_subst -> pcon
 
-let subst_pcon_term sub (con,u as pcon) = 
-  try let con', can = subst_con0 sub pcon in 
+let subst_pcon_term sub (con,u as pcon) =
+  try let con', can = subst_con0 sub pcon in
 	(con',u), can
   with No_subst -> pcon, mkConstU pcon
 
@@ -342,9 +342,9 @@ let rec map_kn f f' c =
   let func = map_kn f f' in
     match kind_of_term c with
       | Const kn -> (try snd (f' kn) with No_subst -> c)
-      | Proj (kn,t) -> 
+      | Proj (kn,t) ->
           let kn' = try fst (f' (kn,Univ.Instance.empty))
-	    with No_subst -> kn 
+	    with No_subst -> kn
 	  in
 	  let t' = func t in
 	    if kn' == kn && t' == t then c
@@ -355,20 +355,21 @@ let rec map_kn f f' c =
       | Construct (((kn,i),j),u) ->
 	  let kn' = f kn in
 	  if kn'==kn then c else mkConstructU (((kn',i),j),u)
-      | Case (ci,p,ct,l) ->
+      | Case (ci,p,i,ct,bl) ->
 	  let ci_ind =
             let (kn,i) = ci.ci_ind in
 	    let kn' = f kn in
 	    if kn'==kn then ci.ci_ind else kn',i
 	  in
 	  let p' = func p in
+	  let i' = Array.smartmap func i in
 	  let ct' = func ct in
-	  let l' = Array.smartmap func l in
-	    if (ci.ci_ind==ci_ind && p'==p
-		&& l'==l && ct'==ct)then c
+	  let bl' = Array.smartmap (Option.map func) bl in
+	    if (ci.ci_ind==ci_ind && p'==p && i'==i
+		&& bl'==bl && ct'==ct)then c
 	    else
 	      mkCase ({ci with ci_ind = ci_ind},
-		      p',ct', l')
+		      p',i',ct', bl')
       | Cast (ct,k,t) ->
 	  let ct' = func ct in
 	  let t'= func t in

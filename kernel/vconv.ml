@@ -208,10 +208,11 @@ let rec conv_eq pb t1 t2 cu =
        eq_puniverses eq_ind c1 c2 cu
     | Construct c1, Construct c2 ->
        eq_puniverses eq_constructor c1 c2 cu
-    | Case (_,p1,c1,bl1), Case (_,p2,c2,bl2) ->
+    | Case (_,p1,i1,c1,bl1), Case (_,p2,i2,c2,bl2) ->
 	let pcu = conv_eq CONV p1 p2 cu in
 	let ccu = conv_eq CONV c1 c2 pcu in
-	conv_eq_vect bl1 bl2 ccu
+        (* TODO: conv_eq indices -jls *)
+	conv_eq_vect_opt bl1 bl2 ccu
     | Fix ((ln1, i1),(_,tl1,bl1)), Fix ((ln2, i2),(_,tl2,bl2)) ->
 	if Int.equal i1 i2 && Array.equal Int.equal ln1 ln2 then conv_eq_vect tl1 tl2 (conv_eq_vect bl1 bl2 cu)
 	else raise NotConvertible
@@ -226,6 +227,18 @@ and conv_eq_vect vt1 vt2 cu =
     let rcu = ref cu in
     for i = 0 to len-1 do
       rcu := conv_eq CONV vt1.(i) vt2.(i) !rcu
+    done; !rcu
+  else raise NotConvertible
+
+and conv_eq_vect_opt vt1 vt2 cu =
+  let len = Array.length vt1 in
+  if Int.equal len (Array.length vt2) then
+    let rcu = ref cu in
+    for i = 0 to len-1 do
+      match vt1.(i), vt2.(i) with
+      | Some v1, Some v2 -> rcu := conv_eq CONV v1 v2 !rcu
+      | None, None -> ()
+      | _, _ -> raise NotConvertible
     done; !rcu
   else raise NotConvertible
 
@@ -250,5 +263,3 @@ let set_use_vm b =
   else Reduction.set_default_conv (fun cv_pb ?(l2r=false) -> Reduction.conv_cmp cv_pb)
 
 let use_vm _ = !use_vm
-
-

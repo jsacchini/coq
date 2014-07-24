@@ -98,7 +98,7 @@ let retype ?(polyprop=true) sigma =
     | Evar ev -> Evd.existential_type sigma ev
     | Ind ind -> type_of_inductive env ind
     | Construct cstr -> type_of_constructor env cstr
-    | Case (_,p,c,lf) ->
+    | Case (_,p,i,c,lf) -> (* TODO: should we check that the indices i match the indices of c?? -jls *)
         let Inductiveops.IndType(_,realargs) =
           let t = type_of env c in
           try Inductiveops.find_rectype env sigma t
@@ -124,10 +124,10 @@ let retype ?(polyprop=true) sigma =
     | App(f,args) ->
         strip_outer_cast
           (subst_type env sigma (type_of env f) (Array.to_list args))
-    | Proj (p,c) -> 
+    | Proj (p,c) ->
        let Inductiveops.IndType(pars,realargs) =
          try Inductiveops.find_rectype env sigma (type_of env c)
-         with Not_found -> anomaly ~label:"type_of" (str "Bad recursive type") 
+         with Not_found -> anomaly ~label:"type_of" (str "Bad recursive type")
        in
        let (_,u), pars = dest_ind_family pars in
 	 substl (c :: List.rev pars) (Typeops.type_of_projection env (p,u))
@@ -170,7 +170,7 @@ let retype ?(polyprop=true) sigma =
     | App(f,args) ->
 	family_of_sort (sort_of_atomic_type env sigma (type_of env f) args)
     | Lambda _ | Fix _ | Construct _ -> retype_error NotAType
-    | _ -> 
+    | _ ->
       family_of_sort (decomp_sort env sigma (type_of env t))
 
   and type_of_global_reference_knowing_parameters env c args =

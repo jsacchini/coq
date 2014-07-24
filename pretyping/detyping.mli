@@ -22,20 +22,20 @@ val subst_cases_pattern : substitution -> cases_pattern -> cases_pattern
 
 val subst_glob_constr : substitution -> glob_constr -> glob_constr
 
-(** [detype isgoal avoid ctx c] turns a closed [c], into a glob_constr 
-   de Bruijn indexes are turned to bound names, avoiding names in [avoid] 
-   [isgoal] tells if naming must avoid global-level synonyms as intro does 
+(** [detype isgoal avoid ctx c] turns a closed [c], into a glob_constr
+   de Bruijn indexes are turned to bound names, avoiding names in [avoid]
+   [isgoal] tells if naming must avoid global-level synonyms as intro does
    [ctx] gives the names of the free variables *)
 
 val detype : bool -> Id.t list -> names_context -> constr -> glob_constr
 
 val detype_case :
   bool -> ('a -> glob_constr) ->
-  (constructor array -> int array -> 'a array ->
+  (constructor array -> int array -> 'a option array ->
     (Loc.t * Id.t list * cases_pattern list * glob_constr) list) ->
   ('a -> int -> bool) ->
   Id.t list -> inductive * case_style * int array * int ->
-    'a option -> 'a -> 'a array -> glob_constr
+    'a option -> 'a array -> 'a -> 'a option array -> glob_constr (* added indices -jls *)
 
 val detype_sort : sorts -> glob_sort
 

@@ -392,7 +392,7 @@ and extract_ind env kn = (* kn is supposed to be in long form *)
     let packets =
       Array.mapi
 	(fun i mip ->
-	   let (ind,u), ctx = 
+	   let (ind,u), ctx =
 	     Universes.fresh_inductive_instance env (kn,i) in
 	   let ar = Inductive.type_of_inductive env ((mib,mip),u) in
 	   let info = (fst (flag_of_type env ar) = Info) in
@@ -623,7 +623,7 @@ let rec extract_term env mle mlt c args =
 	(* we unify it with an fresh copy of the stored type of [Rel n]. *)
 	let extract_rel mlt = put_magic (mlt, Mlenv.get mle n) (MLrel n)
 	in extract_app env mle mlt extract_rel args
-    | Case ({ci_ind=ip},_,c0,br) ->
+    | Case ({ci_ind=ip},_,_,c0,br) -> (* Ignoring indices. Probably safe here -jls *)
  	extract_app env mle mlt (extract_case env mle (ip,c0,br)) args
     | Fix ((_,i),recd) ->
  	extract_app env mle mlt (extract_fix env mle i recd) args
@@ -811,7 +811,8 @@ and extract_case env mle ((kn,i) as ip,c,br) mlt =
 	assert (Int.equal br_size 1);
 	let s = iterate (fun l -> Kill Kother :: l) ni.(0) [] in
 	let mlt = iterate (fun t -> Tarr (Tdummy Kother, t)) ni.(0) mlt in
-	let e = extract_maybe_term env mle mlt br.(0) in
+	let e = extract_maybe_term env mle mlt (Option.get br.(0)) in
+          (* TODO: unsafe get -jls *)
 	snd (case_expunge s e)
       end
     else
@@ -831,7 +832,8 @@ and extract_case env mle ((kn,i) as ip,c,br) mlt =
 	let s = List.map (type2sign env) oi.ip_types.(i) in
 	let s = sign_with_implicits r s mi.ind_nparams in
 	(* Extraction of the branch (in functional form). *)
-	let e = extract_maybe_term env mle (type_recomp (l,mlt)) br.(i) in
+	let e = extract_maybe_term env mle (type_recomp (l,mlt))
+          (Option.get br.(i)) in (* TODO: unsafe get -jls *)
 	(* We suppress dummy arguments according to signature. *)
 	let ids,e = case_expunge s e in
 	let e' = handle_exn r (List.length s) (fun _ -> Anonymous) e in

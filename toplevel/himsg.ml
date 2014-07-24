@@ -143,8 +143,8 @@ let rec pr_disjunction pr = function
   | a::l -> pr a ++ str "," ++ spc () ++ pr_disjunction pr l
   | [] -> assert false
 
-let pr_puniverses f env (c,u) = 
-  f env c ++ 
+let pr_puniverses f env (c,u) =
+  f env c ++
   (if Flags.is_universe_polymorphism () && not (Univ.Instance.is_empty u) then
     str"(*" ++ Univ.Instance.pr u ++ str"*)"
   else mt())
@@ -267,7 +267,7 @@ let explain_unification_error env sigma p1 p2 = function
         t ++ strbrk " and " ++ u ++ str ")"
     | UnifUnivInconsistency p ->
         if !Constrextern.print_universes then
-	  spc () ++ str "(Universe inconsistency: " ++ 
+	  spc () ++ str "(Universe inconsistency: " ++
 	    Univ.explain_universe_inconsistency p ++ str")"
 	else
           spc () ++ str "(Universe inconsistency)"
@@ -596,7 +596,7 @@ let explain_non_linear_unification env m t =
   pr_lconstr_env env t ++ str "."
 
 let explain_unsatisfied_constraints env cst =
-  strbrk "Unsatisfied constraints: " ++ Univ.pr_constraints cst ++ 
+  strbrk "Unsatisfied constraints: " ++ Univ.pr_constraints cst ++
     spc () ++ str "(maybe a bugged tactic)."
 
 let explain_type_error env sigma err =
@@ -653,7 +653,7 @@ let explain_cannot_unify_occurrences env sigma nested (cl2,pos2,t2) (cl1,pos1,t1
   spc () ++ str "Matched term " ++ pr_lconstr_env env t2 ++
   strbrk " at position " ++ pr_position (cl2,pos2) ++
   strbrk " is not compatible with matched term " ++
-  pr_lconstr_env env t1 ++ strbrk " at position " ++ 
+  pr_lconstr_env env t1 ++ strbrk " at position " ++
   pr_position (cl1,pos1) ++ ppreason ++ str "."
 
 let explain_pretype_error env sigma err =
@@ -882,7 +882,7 @@ let explain_unsatisfiable_constraints env evd constr comp =
   | None -> Typeclasses.is_resolvable evi
   | Some comp -> Typeclasses.is_resolvable evi && Evar.Set.mem evk comp
   in
-  let undef = 
+  let undef =
     let m = Evar.Map.filter is_kept undef in
       if Evar.Map.is_empty m then undef
       else m
@@ -1127,6 +1127,9 @@ let explain_cannot_infer_predicate env typs =
   str "Unable to unify the types found in the branches:" ++
   spc () ++ hov 0 (prlist_with_sep fnl pr_branch (Array.to_list typs))
 
+let explain_complex_dependent_match () =
+  str "Only simple dependent pattern match are allowed."
+
 let explain_pattern_matching_error env = function
   | BadPattern (c,t) ->
       explain_bad_pattern env c t
@@ -1142,6 +1145,8 @@ let explain_pattern_matching_error env = function
       explain_non_exhaustive env tms
   | CannotInferPredicate typs ->
       explain_cannot_infer_predicate env typs
+  | ComplexDependentMatch ->
+      explain_complex_dependent_match ()
 
 let explain_reduction_tactic_error = function
   | Tacred.InvalidAbstraction (env,c,(env',e)) ->

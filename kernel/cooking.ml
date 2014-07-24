@@ -100,8 +100,8 @@ let expmod_constr cache modlist c =
   let update_case_info = update_case_info cache in
   let rec substrec c =
     match kind_of_term c with
-      | Case (ci,p,t,br) ->
-	  map_constr substrec (mkCase (update_case_info ci modlist,p,t,br))
+      | Case (ci,p,i,t,br) -> (* TODO: check -jls *)
+	  map_constr substrec (mkCase (update_case_info ci modlist,p,i,t,br))
 
       | Ind (ind,u) ->
 	  (try
@@ -122,12 +122,12 @@ let expmod_constr cache modlist c =
 	    | Not_found -> map_constr substrec c)
 
       | Proj (p, c') ->
-          (try 
+          (try
 	     let p' = share_univs (ConstRef p) Univ.Instance.empty modlist in
 	     match kind_of_term p' with
 	     | Const (p',_) -> mkProj (p', substrec c')
-	     | App (f, args) -> 
-	       (match kind_of_term f with 
+	     | App (f, args) ->
+	       (match kind_of_term f with
 	       | Const (p', _) -> mkProj (p', substrec c')
 	       | _ -> assert false)
 	     | _ -> assert false
@@ -149,7 +149,7 @@ type recipe = { from : constant_body; info : Opaqueproof.cooking_info }
 type inline = bool
 
 type result =
-  constant_def * constant_type * projection_body option * 
+  constant_def * constant_type * projection_body option *
     bool * constant_universes * inline
     * Context.section_context option
 
@@ -173,7 +173,7 @@ let cook_constr { Opaqueproof.modlist ; abstract } c =
 
 let cook_constant env { from = cb; info = { Opaqueproof.modlist; abstract } } =
   let cache = RefTable.create 13 in
-  let abstract, abs_ctx = abstract in 
+  let abstract, abs_ctx = abstract in
   let hyps = Context.map_named_context (expmod_constr cache modlist) abstract in
   let body = on_body modlist (hyps, abs_ctx)
     (fun c -> abstract_constant_body (expmod_constr cache modlist c) hyps)
@@ -198,24 +198,24 @@ let cook_constant env { from = cb; info = { Opaqueproof.modlist; abstract } } =
   let projection pb =
     let c' = abstract_constant_body (expmod_constr cache modlist pb.proj_body) hyps in
     let ((mind, _), _), n' =
-      try 
+      try
 	let c' = share_univs cache (IndRef (pb.proj_ind,0)) Univ.Instance.empty modlist in
 	  match kind_of_term c' with
 	  | App (f,l) -> (destInd f, Array.length l)
 	  | Ind ind -> ind, 0
-	  | _ -> assert false 
+	  | _ -> assert false
       with Not_found -> (((pb.proj_ind,0),Univ.Instance.empty), 0)
-    in 
+    in
     let typ = (* By invariant, a regular arity *)
-      match typ with RegularArity t -> t | TemplateArity _ -> assert false 
+      match typ with RegularArity t -> t | TemplateArity _ -> assert false
     in
     let ctx, ty' = decompose_prod_n (n' + pb.proj_npars + 1) typ in
       { proj_ind = mind; proj_npars = pb.proj_npars + n'; proj_arg = pb.proj_arg;
 	proj_type = ty'; proj_body = c' }
   in
   let univs = UContext.union abs_ctx cb.const_universes in
-    (body, typ, Option.map projection cb.const_proj, 
-     cb.const_polymorphic, univs, cb.const_inline_code, 
+    (body, typ, Option.map projection cb.const_proj,
+     cb.const_polymorphic, univs, cb.const_inline_code,
      Some const_hyps)
 
 (* let cook_constant_key = Profile.declare_profile "cook_constant" *)

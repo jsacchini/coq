@@ -50,13 +50,13 @@ module Stack : sig
 
   val pr_app_node : ('a -> Pp.std_ppcmds) -> 'a app_node -> Pp.std_ppcmds
 
-  type 'a cst_member = 
+  type 'a cst_member =
     | Cst_const of pconstant
     | Cst_proj of projection * 'a
 
   type 'a member =
   | App of 'a app_node
-  | Case of case_info * 'a * 'a array * Cst_stack.t
+  | Case of case_info * 'a * 'a option array * Cst_stack.t
   | Proj of int * int * projection
   | Fix of fixpoint * 'a t * Cst_stack.t
   | Cst of 'a cst_member * int (** current foccussed arg *) * int list (** remaining args *)
@@ -228,7 +228,7 @@ type 'a miota_args = {
   mconstr : constr;     (** the constructor *)
   mci     : case_info;  (** special info to re-build pattern *)
   mcargs  : 'a list;    (** the constructor's arguments *)
-  mlf     : 'a array }  (** the branch code vector *)
+  mlf     : 'a option array }  (** the branch code vector *)
 
 val reducible_mind_case : constr -> bool
 val reduce_mind_case : constr miota_args -> constr
@@ -268,7 +268,7 @@ val check_conv : ?pb:conv_pb -> ?ts:transparent_state -> env ->  evar_map -> con
 (** [infer_fconv] Adds necessary universe constraints to the evar map.
     pb defaults to CUMUL and ts to a full transparent state.
  *)
-val infer_conv : ?pb:conv_pb -> ?ts:transparent_state -> env ->  evar_map -> constr -> constr -> 
+val infer_conv : ?pb:conv_pb -> ?ts:transparent_state -> env ->  evar_map -> constr -> constr ->
   evar_map * bool
 
 (** {6 Special-Purpose Reduction Functions } *)

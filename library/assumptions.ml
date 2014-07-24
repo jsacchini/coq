@@ -201,12 +201,16 @@ let assumptions ?(add_opaque=false) ?(add_transparent=false) st (* t *) =
 	  (iter e1)**(iter e2)
 	| LetIn (_,e1,e2,e3) -> (iter e1)**(iter e2)**(iter e3)
 	| App (e1, e_array) -> (iter e1)**(iter_array e_array)
-	| Case (_,e1,e2,e_array) -> (iter e1)**(iter e2)**(iter_array e_array)
+	| Case (_,e1,e_array0,e2,e_array) -> (iter e1)**(iter_array e_array0)**(iter e2)**(iter_array_opt e_array)
 	| Fix (_,(_, e1_array, e2_array)) | CoFix (_,(_,e1_array, e2_array)) ->
           (iter_array e1_array) ** (iter_array e2_array)
 	| Const (kn,_) -> do_memoize_kn kn
 	| _ -> identity2 (* closed atomic types + rel *)
     and iter_array a = Array.fold_right (fun e f -> (iter e)**f) a identity2
+    and iter_array_opt a =
+      Array.fold_right (fun e f -> match e with
+      | Some e -> (iter e)**f
+      | None -> f) a identity2
     in iter t s acc
 
   and add_id id s acc =

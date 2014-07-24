@@ -53,7 +53,7 @@ let is_private mib =
 let check_privacy_block mib =
   if is_private mib then
     errorlabstrm ""(str"case analysis on a private inductive type")
-      
+
 (**********************************************************************)
 (* Building case analysis schemes *)
 (* Christine Paulin, 1996 *)
@@ -64,7 +64,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
     mib.mind_params_ctxt
   in
   let () = check_privacy_block mib in
-  let () = 
+  let () =
     if not (Sorts.List.mem kind (elim_sorts specif)) then
       raise
 	(RecursionSchemeError
@@ -102,8 +102,9 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
       in
       it_mkLambda_or_LetIn_name env'
        	(mkCase (ci, lift ndepar p,
-		     mkRel 1,
-		     Termops.rel_vect ndepar k))
+                 [||] (* TODO: which indices -jls *),
+		 mkRel 1,
+		 Array.map (fun x -> Some x) (Termops.rel_vect ndepar k)))
        	deparsign
     else
       let cs = lift_constructor (k+1) constrs.(k) in
@@ -113,7 +114,7 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
   in
   let sigma, s = Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg env sigma kind in
   let typP = make_arity env' dep indf s in
-  let c = 
+  let c =
     it_mkLambda_or_LetIn_name env
     (mkLambda_string "P" typP
      (add_branch (push_rel (Anonymous,None,typP) env') 0)) lnamespar
@@ -375,8 +376,9 @@ let mis_make_indrec env sigma listdepkind mib u =
 	      in
 		it_mkLambda_or_LetIn_name env
 		  (mkCase (ci, pred,
-		          mkRel 1,
-			  branches))
+                           [||] (* TODO: indices? -jls *),
+		           mkRel 1,
+			   Array.map (fun x -> Some x) branches))
 		  (Termops.lift_rel_context nrec deparsign)
 	    in
 
@@ -427,9 +429,9 @@ let mis_make_indrec env sigma listdepkind mib u =
     let rec put_arity env i = function
       | ((indi,u),_,_,dep,kinds)::rest ->
 	  let indf = make_ind_family ((indi,u), Termops.extended_rel_list i lnamesparrec) in
-	  let s = 
-	    Evarutil.evd_comb1 (Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg env) 
-	      evdref kinds 
+	  let s =
+	    Evarutil.evd_comb1 (Evd.fresh_sort_in_family ~rigid:Evd.univ_flexible_alg env)
+	      evdref kinds
 	  in
 	  let typP = make_arity env dep indf s in
 	    mkLambda_string "P" typP

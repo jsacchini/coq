@@ -41,16 +41,16 @@ val inductive_instance : mutual_inductive_body -> universe_instance
 val inductive_context : mutual_inductive_body -> universe_context
 val inductive_params_ctxt : mutual_inductive_body puniverses -> rel_context
 
-val instantiate_inductive_constraints : 
+val instantiate_inductive_constraints :
   mutual_inductive_body -> universe_level_subst -> constraints
 
 val constrained_type_of_inductive : env -> mind_specif puniverses -> types constrained
-val constrained_type_of_inductive_knowing_parameters : 
+val constrained_type_of_inductive_knowing_parameters :
   env -> mind_specif puniverses -> types Lazy.t array -> types constrained
 
 val type_of_inductive : env -> mind_specif puniverses -> types
 
-val type_of_inductive_knowing_parameters : 
+val type_of_inductive_knowing_parameters :
   env -> ?polyprop:bool -> mind_specif puniverses -> types Lazy.t array -> types
 
 val elim_sorts : mind_specif -> sorts_family list
@@ -80,8 +80,12 @@ val inductive_params : mind_specif -> int
    the universe constraints generated.
  *)
 val type_case_branches :
-  env -> pinductive * constr list -> unsafe_judgment -> constr
+  env -> pinductive * constr list -> unsafe_judgment -> constr array -> constr
     -> types array * types
+
+val type_extended_case_branches :
+  env -> pinductive * constr list -> unsafe_judgment -> constr option array -> constr
+    -> types option array * types
 
 val build_branches_type :
   pinductive -> mutual_inductive_body * one_inductive_body ->
@@ -134,4 +138,3 @@ type guard_env =
 type stack_element = |SClosure of guard_env*constr |SArg of subterm_spec Lazy.t
 
 val subterm_specif : guard_env -> stack_element list -> constr -> subterm_spec
-

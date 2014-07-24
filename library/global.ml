@@ -143,20 +143,20 @@ let env_of_context hyps =
 
 open Globnames
 
-(** Build a fresh instance for a given context, its associated substitution and 
+(** Build a fresh instance for a given context, its associated substitution and
     the instantiated constraints. *)
 
-let type_of_global_unsafe r = 
+let type_of_global_unsafe r =
   let env = env() in
   match r with
   | VarRef id -> Environ.named_type id env
-  | ConstRef c -> 
-     let cb = Environ.lookup_constant c env in 
+  | ConstRef c ->
+     let cb = Environ.lookup_constant c env in
        Typeops.type_of_constant_type env cb.Declarations.const_type
   | IndRef ind ->
      let (mib, oib as specif) = Inductive.lookup_mind_specif env ind in
-     let inst = 
-       if mib.Declarations.mind_polymorphic then 
+     let inst =
+       if mib.Declarations.mind_polymorphic then
 	 Univ.UContext.instance mib.Declarations.mind_universes
        else Univ.Instance.empty
      in
@@ -166,66 +166,66 @@ let type_of_global_unsafe r =
      let inst = Univ.UContext.instance mib.Declarations.mind_universes in
        Inductive.type_of_constructor (cstr,inst) specif
 
-let type_of_global_in_context env r = 
+let type_of_global_in_context env r =
   let open Declarations in
   match r with
   | VarRef id -> Environ.named_type id env, Univ.UContext.empty
-  | ConstRef c -> 
-     let cb = Environ.lookup_constant c env in 
+  | ConstRef c ->
+     let cb = Environ.lookup_constant c env in
      let univs = Declareops.universes_of_polymorphic_constant cb in
        Typeops.type_of_constant_type env cb.Declarations.const_type, univs
   | IndRef ind ->
      let (mib, oib as specif) = Inductive.lookup_mind_specif env ind in
-     let univs = 
-       if mib.mind_polymorphic then mib.mind_universes 
+     let univs =
+       if mib.mind_polymorphic then mib.mind_universes
        else Univ.UContext.empty
      in Inductive.type_of_inductive env (specif, Univ.UContext.instance univs), univs
   | ConstructRef cstr ->
      let (mib,oib as specif) = Inductive.lookup_mind_specif env (inductive_of_constructor cstr) in
-     let univs = 
-       if mib.mind_polymorphic then mib.mind_universes 
+     let univs =
+       if mib.mind_polymorphic then mib.mind_universes
        else Univ.UContext.empty
      in
      let inst = Univ.UContext.instance univs in
        Inductive.type_of_constructor (cstr,inst) specif, univs
 
-let universes_of_global env r = 
+let universes_of_global env r =
   let open Declarations in
     match r with
     | VarRef id -> Univ.UContext.empty
-    | ConstRef c -> 
-      let cb = Environ.lookup_constant c env in 
+    | ConstRef c ->
+      let cb = Environ.lookup_constant c env in
 	Declareops.universes_of_constant cb
     | IndRef ind ->
       let (mib, oib) = Inductive.lookup_mind_specif env ind in
-	mib.mind_universes 
+	mib.mind_universes
     | ConstructRef cstr ->
       let (mib,oib) = Inductive.lookup_mind_specif env (inductive_of_constructor cstr) in
-	mib.mind_universes 
+	mib.mind_universes
 
-let universes_of_global gr = 
+let universes_of_global gr =
   universes_of_global (env ()) gr
 
-let is_polymorphic r = 
-  let env = env() in 
+let is_polymorphic r =
+  let env = env() in
   match r with
   | VarRef id -> false
   | ConstRef c -> Environ.polymorphic_constant c env
   | IndRef ind -> Environ.polymorphic_ind ind env
   | ConstructRef cstr -> Environ.polymorphic_ind (inductive_of_constructor cstr) env
 
-let is_template_polymorphic r = 
-  let env = env() in 
+let is_template_polymorphic r =
+  let env = env() in
   match r with
   | VarRef id -> false
   | ConstRef c -> Environ.template_polymorphic_constant c env
   | IndRef ind -> Environ.template_polymorphic_ind ind env
   | ConstructRef cstr -> Environ.template_polymorphic_ind (inductive_of_constructor cstr) env
 
-let current_dirpath () = 
+let current_dirpath () =
   Safe_typing.current_dirpath (safe_env ())
 
-let with_global f = 
+let with_global f =
   let (a, ctx) = f (env ()) (current_dirpath ()) in
     push_context_set ctx; a
 

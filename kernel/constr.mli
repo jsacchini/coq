@@ -23,7 +23,7 @@ type existential_key = Evar.t
 type metavariable = int
 
 (** {6 Case annotation } *)
-type case_style = LetStyle | IfStyle | LetPatternStyle | MatchStyle 
+type case_style = LetStyle | IfStyle | LetPatternStyle | MatchStyle
   | RegularStyle (** infer printing form from number of constructor *)
 type case_printing =
   { ind_nargs : int; (** length of the arity of the inductive type *)
@@ -118,15 +118,19 @@ val mkConstructU : pconstructor -> constr
 val mkConstructUi : pinductive * int -> constr
 
 (** Constructs a destructor of inductive type.
-    
-    [mkCase ci p c ac] stand for match [c] as [x] in [I args] return [p] with [ac] 
+
+    [mkCase ci p c ac] stand for match [c] as [x] in [I args] return [p] with [ac]
     presented as describe in [ci].
 
     [p] stucture is [fun args x -> "return clause"]
 
-    [ac]{^ ith} element is ith constructor case presented as 
+    [ac]{^ ith} element is ith constructor case presented as
     {e lambda construct_args (without params). case_term } *)
-val mkCase : case_info * constr * constr * constr array -> constr
+val mkCase : case_info * constr * constr array * constr * constr option array
+           -> constr
+
+val mkCaseNoIndex : case_info * constr * constr * constr array -> constr
+
 
 (** If [recindxs = [|i1,...in|]]
       [funnames = [|f1,.....fn|]]
@@ -148,10 +152,10 @@ val mkFix : fixpoint -> constr
 
 (** If [funnames = [|f1,.....fn|]]
       [typarray = [|t1,...tn|]]
-      [bodies   = [b1,.....bn]] 
+      [bodies   = [b1,.....bn]]
    then [mkCoFix (i, (funnames, typarray, bodies))]
    constructs the ith function of the block
-   
+
     [CoFixpoint f1 = b1
      with       f2 = b2
      ...
@@ -187,7 +191,8 @@ type ('constr, 'types) kind_of_term =
   | Const     of constant puniverses
   | Ind       of inductive puniverses
   | Construct of constructor puniverses
-  | Case      of case_info * 'constr * 'constr * 'constr array
+  | Case      of case_info * 'constr * 'constr array * 'constr *
+                 'constr option array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
   | Proj      of constant * 'constr
@@ -206,7 +211,7 @@ val equal : constr -> constr -> bool
    application grouping and the universe equalities in [u]. *)
 val eq_constr_univs : constr Univ.check_function
 
-(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo 
+(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo
     alpha, casts, application grouping and the universe inequalities in [u]. *)
 val leq_constr_univs : constr Univ.check_function
 
@@ -214,7 +219,7 @@ val leq_constr_univs : constr Univ.check_function
    application grouping and the universe equalities in [u]. *)
 val eq_constr_univs_infer : Univ.universes -> constr -> constr -> bool Univ.constrained
 
-(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo 
+(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo
     alpha, casts, application grouping and the universe inequalities in [u]. *)
 val leq_constr_univs_infer : Univ.universes -> constr -> constr -> bool Univ.constrained
 
@@ -275,8 +280,8 @@ val compare_head : (constr -> constr -> bool) -> constr -> constr -> bool
 
 (** [compare_head_gen u s f c1 c2] compare [c1] and [c2] using [f] to compare
    the immediate subterms of [c1] of [c2] if needed, [u] to compare universe
-   instances (the first boolean tells if they belong to a constant), [s] to 
-   compare sorts; Cast's, binders name and Cases annotations are not taken 
+   instances (the first boolean tells if they belong to a constant), [s] to
+   compare sorts; Cast's, binders name and Cases annotations are not taken
     into account *)
 
 val compare_head_gen : (bool -> Univ.Instance.t -> Univ.Instance.t -> bool) ->
@@ -297,7 +302,7 @@ val compare_head_gen_leq : (bool -> Univ.Instance.t -> Univ.Instance.t -> bool) 
   (constr -> constr -> bool) ->
   (constr -> constr -> bool) ->
   constr -> constr -> bool
-  
+
 (** {6 Hashconsing} *)
 
 val hash : constr -> int

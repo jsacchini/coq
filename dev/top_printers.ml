@@ -193,7 +193,7 @@ let ppevar_universe_context l = pp (Evd.pr_evar_universe_context l)
 let ppconstraints_map c = pp (Universes.pr_constraints_map c)
 let ppconstraints c = pp (pr_constraints c)
 let ppuniverseconstraints c = pp (Universes.Constraints.pr c)
-let ppuniverse_context_future c = 
+let ppuniverse_context_future c =
   let ctx = Future.force c in
     ppuniverse_context ctx
 let ppuniverses u = pp (Univ.pr_universes u)
@@ -239,9 +239,9 @@ let constr_display csr =
       "MutConstruct(("^(string_of_mind sp)^","^(string_of_int i)^"),"
       ^","^(universes_display u)^(string_of_int j)^")"
   | Proj (p, c) -> "Proj("^(string_of_con p)^","^term_display c ^")"
-  | Case (ci,p,c,bl) ->
-      "MutCase(<abs>,"^(term_display p)^","^(term_display c)^","
-      ^(array_display bl)^")"
+  | Case (ci,p,i,c,bl) ->
+      "MutCase(<abs>,"^(term_display p)^",["^(array_display i)^"],"^(term_display c)^","
+      ^(display_branches bl)^")"
   | Fix ((t,i),(lna,tl,bl)) ->
       "Fix(([|"^(Array.fold_right (fun x i -> (string_of_int x)^(if not(i="")
         then (";"^i) else "")) t "")^"|],"^(string_of_int i)^"),"
@@ -262,6 +262,15 @@ let constr_display csr =
        (fun x i -> (term_display x)^(if not(i="") then (";"^i) else ""))
        v "")^"|]"
 
+  and display_branches v =
+    let display_opt x = match x with
+    | Some x -> term_display x
+    | None -> "_|_" in
+    "[|"^
+    (Array.fold_right
+       (fun x i -> (display_opt x)^(if not(i="") then (";"^i) else ""))
+       v "")^"|]"
+
   and univ_display u =
     incr cnt; pp (str "with " ++ int !cnt ++ str" " ++ pr_uni u ++ fnl ())
 
@@ -274,7 +283,7 @@ let constr_display csr =
     | Type u -> univ_display u;
 	"Type("^(string_of_int !cnt)^")"
 
-  and universes_display l = 
+  and universes_display l =
     Array.fold_right (fun x i -> level_display x; (string_of_int !cnt)^(if not(i="")
         then (" "^i) else "")) (Instance.to_array l) ""
 
@@ -341,16 +350,22 @@ let print_pure_constr csr =
       print_string "Constr(";
       sp_display sp;
       print_string ",";
-      print_int i; print_string ","; print_int j; 
+      print_int i; print_string ","; print_int j;
       print_string ","; universes_display u;
       print_string ")"
-  | Case (ci,p,c,bl) ->
+  | Case (ci,p,i,c,bl) ->
+    let display_opt x = match x with
+    | Some t -> box_display t
+    | None -> print_string "_|_" in
       open_vbox 0;
       print_string "<"; box_display p; print_string ">";
+      print_string "[";
+      Array.iter (fun x ->  print_cut();  box_display x) i;
+      print_string "](todo constr defs)";
       print_cut(); print_string "Case";
       print_space(); box_display c; print_space (); print_string "of";
       open_vbox 0;
-      Array.iter (fun x ->  print_cut();  box_display x) bl;
+      Array.iter (fun x ->  print_cut();  display_opt x) bl;
       close_box();
       print_cut();
       print_string "end";
@@ -548,7 +563,7 @@ let short_string_of_ref loc _ = function
         [Label.to_id (pi3 (repr_mind kn));Id.of_string ("_"^string_of_int i)]
         (Id.of_string ("_"^string_of_int j))
 
-(* Anticipate that printers can be used from ocamldebug and that 
+(* Anticipate that printers can be used from ocamldebug and that
    pretty-printer should not make calls to the global env since ocamldebug
    runs in a different process and does not have the proper env at hand *)
 let _ = Constrextern.in_debugger := true

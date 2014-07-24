@@ -87,7 +87,7 @@ let kind_of_head env t =
       (try on_subterm k (c :: l) b (constant_head p)
        with Not_found -> assert false)
 
-  | Case (_,_,c,_) -> aux k [] c true
+  | Case (_,_,_,c,_) -> aux k [] c true (* TODO: check -jls *)
   | Fix ((i,j),_) ->
       let n = i.(j) in
       try aux k [] (List.nth l n) true
@@ -121,9 +121,9 @@ let compute_head = function
    let env = Global.env() in
    let cb = Environ.lookup_constant cst env in
    let is_Def = function Declarations.Def _ -> true | _ -> false in
-   let body = 
+   let body =
      if cb.Declarations.const_proj = None && is_Def cb.Declarations.const_body
-     then Declareops.body_of_constant cb else None 
+     then Declareops.body_of_constant cb else None
    in
      (match body with
      | None -> RigidHead (RigidParameter cst)

@@ -50,11 +50,19 @@ let ids_of_cases_indtype =
   vars_of []
 
 let ids_of_cases_tomatch tms =
+  (* TODO: check if we have to do something about index definitions.
+     For now, they are ignored. -jls *)
   List.fold_right
-    (fun (_,(ona,indnal)) l ->
+    (fun (_,(ona,indnal,_)) l ->
       Option.fold_right (fun t -> (@) (ids_of_cases_indtype t))
       indnal (Option.fold_right (Loc.down_located name_cons) ona l))
     tms []
+
+let index_def_of_cases_tomatch i : constr_expr list =
+  List.fold_right
+    (fun (_,(_,_,idx)) l ->
+      Option.fold_right (fun x acc -> List.map snd x @ acc) idx l)
+  i []
 
 let is_constructor id =
   try ignore (Nametab.locate_extended (qualid_of_ident id)); true
@@ -121,6 +129,9 @@ let fold_constr_expr_with_binders g f n acc = function
       let ids = ids_of_cases_tomatch al in
       let acc = Option.fold_left (f (List.fold_right g ids n)) acc rtnpo in
       let acc = List.fold_left (f n) acc (List.map fst al) in
+      (* TODO: check if this fold over index definitions make sense. -jls *)
+      let idxs = index_def_of_cases_tomatch al in
+      let acc = List.fold_left (f n) acc idxs in
       List.fold_right (fun (loc,patl,rhs) acc ->
 	let ids = ids_of_pattern_list patl in
 	f (Id.Set.fold g ids n) acc rhs) bl acc

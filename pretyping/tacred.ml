@@ -43,7 +43,7 @@ let error_not_evaluable r =
      spc () ++ str "to an evaluable reference.")
 
 let is_evaluable_const env cst =
-  is_transparent env (ConstKey cst) && 
+  is_transparent env (ConstKey cst) &&
     (evaluable_constant cst env || is_projection cst env)
 
 let is_evaluable_var env id =
@@ -55,9 +55,9 @@ let is_evaluable env = function
 
 let value_of_evaluable_ref env evref u =
   match evref with
-  | EvalConstRef con -> 
+  | EvalConstRef con ->
     (try constant_value_in env (con,u)
-    with NotEvaluableConst IsProj -> 
+    with NotEvaluableConst IsProj ->
       raise (Invalid_argument "value_of_evaluable_ref"))
   | EvalVarRef id -> Option.get (pi2 (lookup_named id env))
 
@@ -104,10 +104,10 @@ let destEvalRefU c = match kind_of_term c with
   | Evar ev -> (EvalEvar ev, Univ.Instance.empty)
   | _ -> anomaly (Pp.str "Not an unfoldable reference")
 
-let unsafe_reference_opt_value sigma env eval = 
+let unsafe_reference_opt_value sigma env eval =
   match eval with
   | EvalConst cst ->
-    (match (lookup_constant cst env).Declarations.const_body with 
+    (match (lookup_constant cst env).Declarations.const_body with
     | Declarations.Def c -> Some (Mod_subst.force_constr c)
     | _ -> None)
   | EvalVar id ->
@@ -118,7 +118,7 @@ let unsafe_reference_opt_value sigma env eval =
       Option.map (lift n) v
   | EvalEvar ev -> Evd.existential_opt_value sigma ev
 
-let reference_opt_value sigma env eval u = 
+let reference_opt_value sigma env eval u =
   match eval with
   | EvalConst cst -> constant_opt_value_in env (cst,u)
   | EvalVar id ->
@@ -262,7 +262,7 @@ let compute_consteval_direct sigma env ref =
       | Fix fix ->
 	  (try check_fix_reversibility labs l fix
 	  with Elimconst -> NotAnElimination)
-      | Case (_,_,d,_) when isRel d -> EliminationCases n
+      | Case (_,_,_,d,_) when isRel d -> EliminationCases n (* TODO: it's late -jls *)
       | Proj (p, d) when isRel d -> EliminationProj n
       | _ -> NotAnElimination
   in
@@ -489,7 +489,10 @@ let reduce_mind_case_use_function func env sigma mia =
   match kind_of_term mia.mconstr with
     | Construct ((ind_sp,i),u) ->
 	let real_cargs = List.skipn mia.mci.ci_npar mia.mcargs in
-	applist (mia.mlf.(i-1), real_cargs)
+        begin match mia.mlf.(i-1) with
+        | Some c -> applist (c, real_cargs)
+        | None -> anomaly (Pp.str "red impossible branch")
+        end
     | CoFix (bodynum,(names,_,_) as cofix) ->
 	let build_cofix_name =
 	  if isConst func then
@@ -515,11 +518,11 @@ let reduce_mind_case_use_function func env sigma mia =
 	    fun _ -> None in
 	let cofix_def =
           contract_cofix_use_function env sigma build_cofix_name cofix in
-	mkCase (mia.mci, mia.mP, applist(cofix_def,mia.mcargs), mia.mlf)
+          mkCase (mia.mci, mia.mP, [||] (* TODO: are indices available in mia? -jls *), applist(cofix_def,mia.mcargs), mia.mlf)
     | _ -> assert false
 
 
-let match_eval_ref env constr = 
+let match_eval_ref env constr =
   match kind_of_term constr with
   | Const (sp, u) when is_evaluable env (EvalConstRef sp) ->
       Some (EvalConst sp, u)
@@ -528,18 +531,18 @@ let match_eval_ref env constr =
   | Evar ev -> Some (EvalEvar ev, Univ.Instance.empty)
   | _ -> None
 
-let match_eval_ref_value sigma env constr = 
+let match_eval_ref_value sigma env constr =
   match kind_of_term constr with
   | Const (sp, u) when is_evaluable env (EvalConstRef sp) ->
     Some (constant_value_in env (sp, u))
-  | Var id when is_evaluable env (EvalVarRef id) -> 
+  | Var id when is_evaluable env (EvalVarRef id) ->
     let (_,v,_) = lookup_named id env in v
   | Rel n -> let (_,v,_) = lookup_rel n env in
 	       Option.map (lift n) v
   | Evar ev -> Evd.existential_opt_value sigma ev
   | _ -> None
 
-let special_red_case env sigma whfun (ci, p, c, lf)  =
+let special_red_case env sigma whfun (ci, p, i, c, lf)  = (* TODO do something with i -jls *)
   let rec redrec s =
     let (constr, cargs) = whfun s in
     match match_eval_ref env constr with
@@ -569,8 +572,8 @@ let recargs = function
 
 let reduce_projection env sigma pb (recarg'hd,stack') stack =
   (match kind_of_term recarg'hd with
-  | Construct _ -> 
-    let proj_narg = 
+  | Construct _ ->
+    let proj_narg =
       pb.Declarations.proj_npars + pb.Declarations.proj_arg
     in Reduced (List.nth stack' proj_narg, stack)
   | _ -> NotReducible)
@@ -579,13 +582,13 @@ let reduce_proj env sigma whfun c =
   (* Pp.msgnl (str" reduce_proj: " ++ print_constr c); *)
   let rec redrec s =
     match kind_of_term s with
-    | Proj (proj, c) -> 
+    | Proj (proj, c) ->
       let c' = try redrec c with Redelimination -> c in
       let constr, cargs = whfun c' in
 	(* Pp.msgnl (str" reduce_proj: constructor: " ++ print_constr constr); *)
 	(match kind_of_term constr with
-	| Construct _ -> 
-	  let proj_narg = 
+	| Construct _ ->
+	  let proj_narg =
 	    let pb = Option.get ((lookup_constant proj env).Declarations.const_proj) in
 	      pb.Declarations.proj_npars + pb.Declarations.proj_arg
 	  in List.nth cargs proj_narg
@@ -646,7 +649,7 @@ let rec red_elim_const env sigma ref u largs =
     | Some (x::l,_,_) when nargs <= List.fold_left max x l -> raise Redelimination
     | Some (l,n,f) ->
         let is_empty = match l with [] -> true | _ -> false in
-	  reduce_params env sigma largs l, 
+	  reduce_params env sigma largs l,
 	  n >= 0 && is_empty && nargs >= n,
           n >= 0 && not is_empty && nargs >= n,
 	  List.mem `ReductionDontExposeCase f
@@ -704,7 +707,7 @@ and reduce_params env sigma stack l =
 	  | Construct _ -> List.assign stack i (applist rarg)
 	  | _ -> raise Redelimination)
       stack l
-    
+
 
 (* reduce to whd normal form or to an applied constant that does not hide
    a reducible iota/fix/cofix redex (the "simpl" tactic) *)
@@ -720,9 +723,9 @@ and whd_simpl_stack env sigma =
       | LetIn (n,b,t,c) -> redrec (applist (substl [b] c, stack))
       | App (f,cl) -> redrec (applist(f, (Array.to_list cl)@stack))
       | Cast (c,_,_) -> redrec (applist(c, stack))
-      | Case (ci,p,c,lf) ->
+      | Case (ci,p,i,c,lf) -> (* TODO: indices -jls *)
           (try
-	    redrec (applist(special_red_case env sigma redrec (ci,p,c,lf), stack))
+	    redrec (applist(special_red_case env sigma redrec (ci,p,i,c,lf), stack))
 	  with
 	      Redelimination -> s')
       | Fix fix ->
@@ -732,7 +735,7 @@ and whd_simpl_stack env sigma =
 	  with Redelimination -> s')
 
       | Proj (p, c) ->
-        (try 
+        (try
 	   if is_evaluable env (EvalConstRef p) then
 	     let pb = Option.get ((lookup_constant p env).Declarations.const_proj) in
  	       (match ReductionBehaviour.get (ConstRef p) with
@@ -740,8 +743,8 @@ and whd_simpl_stack env sigma =
 	       | Some (l, n, f) when not (List.is_empty l) ->
 		 let l' = List.map (fun i -> i - (pb.Declarations.proj_npars + 1)) l in
 		 let stack = reduce_params env sigma stack l' in
-		   (match reduce_projection env sigma pb 
-		     (whd_construct_stack env sigma c) stack 
+		   (match reduce_projection env sigma pb
+		     (whd_construct_stack env sigma c) stack
 		    with
 		    | Reduced s' -> redrec (applist s')
 		    | NotReducible -> s')
@@ -751,8 +754,8 @@ and whd_simpl_stack env sigma =
 		 | NotReducible -> s')
 	   else s'
 	 with Redelimination -> s')
-	  
-      | _ -> 
+
+      | _ ->
         match match_eval_ref env x with
 	| Some (ref, u) ->
           (try
@@ -812,20 +815,20 @@ let try_red_product env sigma c =
       | Cast (c,_,_) -> redrec env c
       | Prod (x,a,b) -> mkProd (x, a, redrec (push_rel (x,None,a) env) b)
       | LetIn (x,a,b,t) -> redrec env (subst1 a t)
-      | Case (ci,p,d,lf) -> simpfun (mkCase (ci,p,redrec env d,lf))
-      | Proj (p, c) -> 
-	let c' = 
+      | Case (ci,p,i,d,lf) -> simpfun (mkCase (ci,p,i,redrec env d,lf)) (* TODO: red indices -jls *)
+      | Proj (p, c) ->
+	let c' =
 	  match kind_of_term c with
 	  | Construct _ -> c
 	  | _ -> redrec env c
 	in
 	  (match match_eval_proj env p with
-	  | Some pb -> 
+	  | Some pb ->
             (match reduce_projection env sigma pb (whd_betaiotazeta_stack sigma c') [] with
 	    | Reduced s -> simpfun (applist s)
 	    | NotReducible -> raise Redelimination)
 	  | None -> raise Redelimination)
-      | _ -> 
+      | _ ->
         (match match_eval_ref env x with
         | Some (ref, u) ->
           (* TO DO: re-fold fixpoints after expansion *)
@@ -973,7 +976,7 @@ let contextually byhead occs f env sigma t =
  * n is the number of the next occurence of name.
  * ol is the occurence list to find. *)
 
-let match_constr_evaluable_ref sigma c evref = 
+let match_constr_evaluable_ref sigma c evref =
   match kind_of_term c, evref with
   | Const (c,u), EvalConstRef c' when eq_constant c c' -> Some u
   | Proj (p,c), EvalConstRef p' when eq_constant p p' -> Some Univ.Instance.empty
@@ -984,13 +987,13 @@ let substlin env sigma evalref n (nowhere_except_in,locs) c =
   let maxocc = List.fold_right max locs 0 in
   let pos = ref n in
   assert (List.for_all (fun x -> x >= 0) locs);
-  let value u = 
-    value_of_evaluable_ref env evalref u 
+  let value u =
+    value_of_evaluable_ref env evalref u
           (* Some (whd_betaiotazeta sigma c) *)
   in
   let rec substrec () c =
     if nowhere_except_in && !pos > maxocc then c
-    else 
+    else
       match match_constr_evaluable_ref sigma c evalref with
       | Some u ->
         let ok =
@@ -998,7 +1001,7 @@ let substlin env sigma evalref n (nowhere_except_in,locs) c =
 	  else not (Int.List.mem !pos locs) in
 	  incr pos;
 	  if ok then value u else c
-      | None -> 
+      | None ->
         map_constr_with_binders_left_to_right
 	  (fun _ () -> ())
           substrec () c
@@ -1088,7 +1091,7 @@ let abstract_scheme env sigma (locc,a) c =
     mkLambda (na,ta,c)
   else
     let c', sigma' = subst_closed_term_occ sigma locc a c in
-      mkLambda (na,ta,c') 
+      mkLambda (na,ta,c')
 
 let pattern_occs loccs_trm env sigma c =
   let abstr_trm = List.fold_right (abstract_scheme env sigma) loccs_trm c in
@@ -1149,10 +1152,10 @@ let one_step_reduce env sigma c =
       | App (f,cl) -> redrec (f, (Array.to_list cl)@stack)
       | LetIn (_,f,_,cl) -> (subst1 f cl,stack)
       | Cast (c,_,_) -> redrec (c,stack)
-      | Case (ci,p,c,lf) ->
+      | Case (ci,p,i,c,lf) -> (* TODO: reduce indices? -jls *)
           (try
 	     (special_red_case env sigma (whd_simpl_stack env sigma)
-	       (ci,p,c,lf), stack)
+	       (ci,p,i,c,lf), stack)
            with Redelimination -> raise NotStepReducible)
       | Fix fix ->
 	  (match reduce_fix (whd_construct_stack env) sigma fix stack with

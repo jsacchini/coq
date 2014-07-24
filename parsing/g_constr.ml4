@@ -25,7 +25,7 @@ let ldots_var = Id.of_string ".."
 
 let constr_kw =
   [ "forall"; "fun"; "match"; "fix"; "cofix"; "with"; "in"; "for";
-    "end"; "as"; "let"; "if"; "then"; "else"; "return";
+    "end"; "as"; "let"; "if"; "then"; "else"; "return"; "where";
     "Prop"; "Set"; "Type"; ".("; "_"; "..";
     "`{"; "`("; "{|"; "|}" ]
 
@@ -259,14 +259,14 @@ GEXTEND Gram
           CLetTuple (!@loc,lb,po,c1,c2)
       | "let"; "'"; p=pattern; ":="; c1 = operconstr LEVEL "200";
           "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, None, [(c1,(None,None))], [(!@loc, [(!@loc,[p])], c2)])
+	    CCases (!@loc, LetPatternStyle, None, [(c1,(None,None,None))], [(!@loc, [(!@loc,[p])], c2)])
       | "let"; "'"; p=pattern; ":="; c1 = operconstr LEVEL "200";
 	  rt = case_type; "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, None))], [(!@loc, [(!@loc, [p])], c2)])
+	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, None,None))], [(!@loc, [(!@loc, [p])], c2)])
       | "let"; "'"; p=pattern; "in"; t = pattern LEVEL "200";
 	  ":="; c1 = operconstr LEVEL "200"; rt = case_type;
           "in"; c2 = operconstr LEVEL "200" ->
-	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, Some t))], [(!@loc, [(!@loc, [p])], c2)])
+	    CCases (!@loc, LetPatternStyle, Some rt, [(c1, (aliasvar p, Some t,None))], [(!@loc, [(!@loc, [p])], c2)])
       | "if"; c=operconstr LEVEL "200"; po = return_type;
 	"then"; b1=operconstr LEVEL "200";
         "else"; b2=operconstr LEVEL "200" ->
@@ -325,7 +325,14 @@ GEXTEND Gram
   ;
   pred_pattern:
     [ [ ona = OPT ["as"; id=name -> id];
-        ty = OPT ["in"; t=pattern -> t] -> (ona,ty) ] ]
+        ty = OPT ["in"; t=pattern -> t];
+        idx = OPT ["where"; i=LIST1 idx_definition SEP "," -> i]
+        -> (ona, ty, idx) ] ]
+  ;
+  idx_definition:
+    [ [ id=name; ":="; c=operconstr LEVEL "100" -> (id,c) ] ]
+(* ty=pattern -> ty *)
+(*       | "."; pattern -> CPatAtom (!@loc, Some (Ident (Loc.ghost, Id.of_string "AAAA"))) ] ] *)
   ;
   case_type:
     [ [ "return"; ty = operconstr LEVEL "100" -> ty ] ]

@@ -46,7 +46,7 @@ let empty_env = empty_env
 
 let engagement env = env.env_stratification.env_engagement
 
-let is_impredicative_set env = 
+let is_impredicative_set env =
   match engagement env with
   | Some ImpredicativeSet -> true
   | _ -> false
@@ -212,7 +212,7 @@ let add_constant_key kn cb linkinfo env =
 let add_constant kn cb env =
   add_constant_key kn cb (no_link_info ()) env
 
-let universes_of cb = 
+let universes_of cb =
   cb.const_universes
 
 let universes_and_subst_of cb u =
@@ -221,8 +221,8 @@ let universes_and_subst_of cb u =
     subst, Univ.instantiate_univ_context subst univs
 
 let map_regular_arity f = function
-  | RegularArity a as ar -> 
-    let a' = f a in 
+  | RegularArity a as ar ->
+    let a' = f a in
       if a' == a then ar else RegularArity a'
   | TemplateArity _ -> assert false
 
@@ -247,7 +247,7 @@ let constant_value env (kn,u) =
   let cb = lookup_constant kn env in
     if cb.const_proj = None then
       match cb.const_body with
-      | Def l_body -> 
+      | Def l_body ->
 	if cb.const_polymorphic then
 	  let subst, csts = universes_and_subst_of cb u in
 	    (subst_univs_level_constr subst (Mod_subst.force_constr l_body), csts)
@@ -270,15 +270,15 @@ let constant_value_and_type env (kn, u) =
 	| Undef _ -> None
       in
 	b', map_regular_arity (subst_univs_level_constr subst) cb.const_type, cst
-    else 
+    else
       let b' = match cb.const_body with
 	| Def l_body -> Some (Mod_subst.force_constr l_body)
 	| OpaqueDef _ -> None
 	| Undef _ -> None
       in b', cb.const_type, Univ.Constraint.empty
 
-(* These functions should be called under the invariant that [env] 
-   already contains the constraints corresponding to the constant 
+(* These functions should be called under the invariant that [env]
+   already contains the constraints corresponding to the constant
    application. *)
 
 (* constant_type gives the type of a constant *)
@@ -292,7 +292,7 @@ let constant_type_in env (kn,u) =
 let constant_value_in env (kn,u) =
   let cb = lookup_constant kn env in
   match cb.const_body with
-    | Def l_body -> 
+    | Def l_body ->
       let b = Mod_subst.force_constr l_body in
 	if cb.const_polymorphic then
 	  let subst = Univ.make_universe_subst u cb.const_universes in
@@ -321,7 +321,7 @@ let polymorphic_pconstant (cst,u) env =
   else polymorphic_constant cst env
 
 let template_polymorphic_constant cst env =
-  match (lookup_constant cst env).const_type with 
+  match (lookup_constant cst env).const_type with
   | TemplateArity _ -> true
   | RegularArity _ -> false
 
@@ -330,12 +330,12 @@ let template_polymorphic_pconstant (cst,u) env =
   else template_polymorphic_constant cst env
 
 let lookup_projection cst env =
-  match (lookup_constant cst env).const_proj with 
+  match (lookup_constant cst env).const_proj with
   | Some pb -> pb
   | None -> anomaly (Pp.str "lookup_projection: constant is not a projection")
 
 let is_projection cst env =
-  match (lookup_constant cst env).const_proj with 
+  match (lookup_constant cst env).const_proj with
   | Some _ -> true
   | None -> false
 
@@ -350,14 +350,14 @@ let polymorphic_pind (ind,u) env =
   else polymorphic_ind ind env
 
 let template_polymorphic_ind (mind,i) env =
-  match (lookup_mind mind env).mind_packets.(i).mind_arity with 
+  match (lookup_mind mind env).mind_packets.(i).mind_arity with
   | TemplateArity _ -> true
   | RegularArity _ -> false
 
 let template_polymorphic_pind (ind,u) env =
   if not (Univ.Instance.is_empty u) then false
   else template_polymorphic_ind ind env
-  
+
 let add_mind_key kn mind_key env =
   let new_inds = Mindmap_env.add kn mind_key env.env_globals.env_inductives in
   let new_globals =
@@ -451,7 +451,7 @@ let lookup_module mp env =
     MPmap.find mp env.env_globals.env_modules
 
 
-let lookup_modtype mp env = 
+let lookup_modtype mp env =
   MPmap.find mp env.env_globals.env_modtypes
 
 (*s Judgments. *)

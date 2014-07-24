@@ -66,7 +66,7 @@ type cbv_value =
 and cbv_stack =
   | TOP
   | APP of cbv_value array * cbv_stack
-  | CASE of constr * constr array * case_info * cbv_value subs * cbv_stack
+  | CASE of constr * constr array * constr option array * case_info * cbv_value subs * cbv_stack
   | PROJ of projection * Declarations.projection_body * cbv_stack
 
 (* les vars pourraient etre des constr,
@@ -121,7 +121,7 @@ let rec stack_concat stk1 stk2 =
   match stk1 with
       TOP -> stk2
     | APP(v,stk1') -> APP(v,stack_concat stk1' stk2)
-    | CASE(c,b,i,s,stk1') -> CASE(c,b,i,s,stack_concat stk1' stk2)
+    | CASE(c,idxs,b,i,s,stk1') -> CASE(c,idxs,b,i,s,stack_concat stk1' stk2)
     | PROJ (p,pinfo,stk1') -> PROJ (p,pinfo,stack_concat stk1' stk2)
 
 (* merge stacks when there is no shifts in between *)
@@ -193,10 +193,12 @@ let rec norm_head info env t stack =
                         they could be computed when getting out of the stack *)
       let nargs = Array.map (cbv_stack_term info TOP env) args in
       norm_head info env head (stack_app nargs stack)
-  | Case (ci,p,c,v) -> norm_head info env c (CASE(p,v,ci,env,stack))
+  | Case (ci,p,i,c,v) ->
+    norm_head info env c (CASE(p,i,v,ci,env,stack))
+    (* TODO: should we add idx to CASE? -jls *)
   | Cast (ct,_,_) -> norm_head info env ct stack
-  
-  | Proj (p, c) -> 
+
+  | Proj (p, c) ->
     let pinfo = Option.get ((Environ.lookup_constant p (info_env info)).Declarations.const_proj) in
     norm_head info env c (PROJ (p, pinfo, stack))
 
@@ -285,17 +287,40 @@ and cbv_stack_term info stack env t =
         cbv_stack_term info stk envf redfix
 
     (* constructor in a Case -> IOTA *)
-    | (CONSTR(((sp,n),u),[||]), APP(args,CASE(_,br,ci,env,stk)))
+    | (CONSTR(((sp,n),u),[||]), APP(args,CASE(_,idxs,br,ci,env,stk)))
             when red_set (info_flags info) fIOTA ->
+      begin match br.(n-1) with
+      | Some br ->
+        (* Remove argument definitions from branch *)
+        let branch_letin_to_lam n br =
+          let (args, body) = decompose_lam_assum br in
+          let (br_args, rest) = List.chop ci.ci_cstr_nargs.(n) args in
+          let br_args = List.map (fun (x,_,t) -> (x,None,t)) br_args in
+          (* Rebuild branch body without definitions *)
+            it_mkLambda_or_LetIn (it_mkLambda_or_LetIn body rest) br_args
+        in
+        (* For extended match, we transform letin to lambdas.
+         * If this is not an extended match, letin can occur in branches
+         * and cannot be transformed to lambdas -jls *)
+        let br =
+          if Array.length idxs > 0
+          then branch_letin_to_lam (n-1) br
+          else br
+        in
 	let cargs =
           Array.sub args ci.ci_npar (Array.length args - ci.ci_npar) in
-        cbv_stack_term info (stack_app cargs stk) env br.(n-1)
-
+        cbv_stack_term info (stack_app cargs stk) env br
+      | None -> Errors.anomaly
+        (Pp.str "Reducing over impossible branch arity > 0")
+      end
     (* constructor of arity 0 in a Case -> IOTA *)
-    | (CONSTR(((_,n),u),[||]), CASE(_,br,_,env,stk))
+    | (CONSTR(((_,n),u),[||]), CASE(_,_,br,_,env,stk))
             when red_set (info_flags info) fIOTA ->
-                    cbv_stack_term info stk env br.(n-1)
-
+      begin match br.(n-1) with
+      | Some br -> cbv_stack_term info stk env br
+      | None -> Errors.anomaly
+        (Pp.str "Reducing over impossible branch arity 0")
+      end
     (* may be reduced later by application *)
     | (FIXP(fix,env,[||]), APP(appl,TOP)) -> FIXP(fix,env,appl)
     | (COFIXP(cofix,env,[||]), APP(appl,TOP)) -> COFIXP(cofix,env,appl)
@@ -313,10 +338,11 @@ let rec apply_stack info t = function
   | TOP -> t
   | APP (args,st) ->
       apply_stack info (mkApp(t,Array.map (cbv_norm_value info) args)) st
-  | CASE (ty,br,ci,env,st) ->
+  | CASE (ty,idxs,br,ci,env,st) ->
       apply_stack info
-        (mkCase (ci, cbv_norm_term info env ty, t,
-		    Array.map (cbv_norm_term info env) br))
+        (mkCase (ci, cbv_norm_term info env ty,
+                 Array.map (cbv_norm_term info env) idxs, t,
+		 Array.map (Option.map (cbv_norm_term info env)) br))
         st
   | PROJ (p, pinfo, st) ->
        apply_stack info (mkProj (p, t)) st

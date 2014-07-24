@@ -83,7 +83,7 @@ val unfold_red : evaluable_global_reference -> reds
 type table_key = constant puniverses tableKey
 
 type 'a infos_cache
-type 'a infos = { 
+type 'a infos = {
   i_flags : reds;
   i_cache : 'a infos_cache }
 
@@ -116,7 +116,7 @@ type fterm =
   | FProj of constant * fconstr
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
-  | FCases of case_info * fconstr * fconstr * fconstr array
+  | FCases of case_info * fconstr * fconstr array * fconstr * fconstr option array
   | FLambda of int * (Name.t * constr) list * constr * fconstr subs
   | FProd of Name.t * fconstr * fconstr
   | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
@@ -132,7 +132,7 @@ type fterm =
 
 type stack_member =
   | Zapp of fconstr array
-  | Zcase of case_info * fconstr * fconstr array
+  | Zcase of case_info * fconstr * fconstr option array
   | Zproj of int * int * constant
   | Zfix of fconstr * stack
   | Zshift of int
@@ -187,10 +187,10 @@ val whd_val : clos_infos -> fconstr -> constr
 val whd_stack :
   clos_infos -> fconstr -> stack -> fconstr * stack
 
-val eta_expand_ind_stack : env -> lift -> pinductive -> fconstr -> stack -> 
+val eta_expand_ind_stack : env -> lift -> pinductive -> fconstr -> stack ->
   (lift * (fconstr * stack)) -> lift * (fconstr * stack)
- 
-val eta_expand_ind_stacks : env -> inductive -> fconstr -> stack -> 
+
+val eta_expand_ind_stacks : env -> inductive -> fconstr -> stack ->
    (fconstr * stack) -> stack * stack
 
 (** Conversion auxiliary functions to do step by step normalisation *)

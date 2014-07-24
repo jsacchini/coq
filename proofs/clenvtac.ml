@@ -42,8 +42,8 @@ let clenv_cast_meta clenv =
             else mkCast (mkMeta mv, DEFAULTcast, b)
 	  with Not_found -> u)
       | App(f,args) -> mkApp (crec_hd f, Array.map crec args)
-      | Case(ci,p,c,br) ->
-	  mkCase (ci, crec_hd p, crec_hd c, Array.map crec br)
+      | Case(ci,p,i,c,br) -> (* what? -jls *)
+	  mkCase (ci, crec_hd p, Array.map crec i, crec_hd c, Array.map (Option.map crec) br)
       | Proj (p, c) -> mkProj (p, crec_hd c)
       | _ -> u
   in

@@ -201,7 +201,7 @@ let add_free_rels_until strict strongly_strict revpat bound env m pos acc =
           iter_constr_with_full_binders push_lift (frec false) ed c
     | Proj (p,c) when rig ->
       if strict then () else
-        iter_constr_with_full_binders push_lift (frec false) ed c	  
+        iter_constr_with_full_binders push_lift (frec false) ed c
     | Case _ when rig ->
 	if strict then () else
           iter_constr_with_full_binders push_lift (frec false) ed c
@@ -215,7 +215,7 @@ let add_free_rels_until strict strongly_strict revpat bound env m pos acc =
 let rec is_rigid_head t = match kind_of_term t with
   | Rel _ | Evar _ -> false
   | Ind _ | Const _ | Var _ | Sort _ -> true
-  | Case (_,_,f,_) -> is_rigid_head f
+  | Case (_,_,_,f,_) -> is_rigid_head f (* TODO: check -jls *)
   | Proj (p,c) -> true
   | App (f,args) ->
       (match kind_of_term f with
@@ -551,7 +551,7 @@ let discharge_implicits (_,(req,l)) =
       (* in *)
       let ref' = if isVarRef ref then ref else pop_global_reference ref in
       let extra_impls = impls_of_context vars in
-      let l' = 
+      let l' =
 	(* if isproj then [ref',snd (List.hd l)] *)
 	(* else *)
 	  [ref', List.map (add_section_impls vars extra_impls) (snd (List.hd l))] in
@@ -562,7 +562,7 @@ let discharge_implicits (_,(req,l)) =
       let con' = pop_con con in
       let vars,_ = section_segment_of_constant con in
       let extra_impls = impls_of_context vars in
-      let newimpls = 
+      let newimpls =
 	(* if is_projection con (Global.env()) then (snd (List.hd l)) *)
 	(* else *) List.map (add_section_impls vars extra_impls) (snd (List.hd l))
       in
@@ -682,7 +682,7 @@ let check_rigidity isrigid =
   if not isrigid then
     errorlabstrm "" (strbrk "Multiple sequences of implicit arguments available only for references that cannot be applied to an arbitrarily large number of arguments.")
 
-let projection_implicits env p impls = 
+let projection_implicits env p impls =
   let pb = Environ.lookup_projection p env in
     CList.skipn_at_least pb.Declarations.proj_npars impls
 

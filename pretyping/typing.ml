@@ -73,8 +73,11 @@ let e_check_branch_types env evdref (ind,u) cj (lfj,explft) =
   if not (Int.equal (Array.length lfj) (Array.length explft)) then
     error_number_branches env cj (Array.length explft);
   for i = 0 to Array.length explft - 1 do
-    if not (Evarconv.e_cumul env evdref lfj.(i).uj_type explft.(i)) then
-      error_ill_formed_branch env cj.uj_val ((ind,i+1),u) lfj.(i).uj_type explft.(i)
+    match lfj.(i) with
+    | Some j ->
+      if not (Evarconv.e_cumul env evdref j.uj_type explft.(i)) then
+        error_ill_formed_branch env cj.uj_val ((ind,i+1),u) j.uj_type explft.(i)
+    | None -> ()
   done
 
 let max_sort l =
@@ -116,14 +119,14 @@ let e_type_case_branches env evdref (ind,largs) pj c =
     whd_betaiota !evdref (Reduction.betazeta_appvect (n+1) p (Array.of_list (realargs@[c]))) in
   (lc, ty, univ)
 
-let e_judge_of_case env evdref ci pj cj lfj =
+let e_judge_of_case env evdref ci pj cj (lfj : Environ.unsafe_judgment option array) =
   let indspec =
     try find_mrectype env !evdref cj.uj_type
     with Not_found -> error_case_not_inductive env cj in
   let _ = check_case_info env (fst indspec) ci in
   let (bty,rslty,univ) = e_type_case_branches env evdref indspec pj cj.uj_val in
   e_check_branch_types env evdref (fst indspec) cj (lfj,bty);
-  { uj_val  = mkCase (ci, pj.uj_val, cj.uj_val, Array.map j_val lfj);
+  { uj_val  = mkCase (ci, pj.uj_val, [||], cj.uj_val, Array.map (Option.map j_val) lfj (* TODO: -jls *));
     uj_type = rslty }
 
 (* FIXME: might depend on the level of actual parameters!*)
@@ -175,11 +178,12 @@ let rec execute env evdref cstr =
     | Construct cstruct ->
 	make_judge cstr (rename_type_of_constructor env cstruct)
 
-    | Case (ci,p,c,lf) ->
+    | Case (ci,p,i,c,lf) ->
         let cj = execute env evdref c in
         let pj = execute env evdref p in
-        let lfj = execute_array env evdref lf in
-        e_judge_of_case env evdref ci pj cj lfj
+        let _ = execute_array env evdref i in (* TODO: -jls *)
+        let lfj = execute_array_opt env evdref lf in
+        e_judge_of_case env evdref ci pj cj lfj (* TODO: add indices to call -jls *)
 
     | Fix ((vn,i as vni),recdef) ->
         let (_,tys,_ as recdef') = execute_recdef env evdref recdef in
@@ -262,6 +266,7 @@ and execute_recdef env evdref (names,lar,vdef) =
   (names,lara,vdefv)
 
 and execute_array env evdref = Array.map (execute env evdref)
+and execute_array_opt env evdref = Array.map (Option.map (execute env evdref))
 
 let check env evd c t =
   let evdref = ref evd in

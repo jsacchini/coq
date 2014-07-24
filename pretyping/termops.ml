@@ -44,8 +44,8 @@ let pr_fix pr_constr ((t,i),(lna,tl,bl)) =
 	   cut() ++ str":=" ++ pr_constr bd) (Array.to_list fixl)) ++
          str"}")
 
-let pr_puniverses p u = 
-  if Univ.Instance.is_empty u then p 
+let pr_puniverses p u =
+  if Univ.Instance.is_empty u then p
   else p ++ str"(*" ++ Univ.Instance.pr u ++ str"*)"
 
 let rec pr_constr c = match kind_of_term c with
@@ -80,10 +80,12 @@ let rec pr_constr c = match kind_of_term c with
   | Construct (((sp,i),j),u) ->
       str"Constr(" ++ pr_puniverses (pr_mind sp ++ str"," ++ int i ++ str"," ++ int j) u ++ str")"
   | Proj (p,c) -> str"Proj(" ++ pr_con p ++ str"," ++ pr_constr c ++ str")"
-  | Case (ci,p,c,bl) -> v 0
-      (hv 0 (str"<"++pr_constr p++str">"++ cut() ++ str"Case " ++
+  | Case (ci,p,i,c,bl) -> v 0
+      (hv 0 (str"<"++pr_constr p++str">"
+             ++ str"[" ++ prlist_with_sep (fun _ -> str", ") pr_constr (Array.to_list i) ++ str "](todo cstr defs)"
+             ++ cut() ++ str"Case " ++
              pr_constr c ++ str"of") ++ cut() ++
-       prlist_with_sep (fun _ -> brk(1,2)) pr_constr (Array.to_list bl) ++
+       prlist_with_sep (fun _ -> brk(1,2)) pr_constr (List.map Option.get (List.filter Option.has_some (Array.to_list bl))) ++
       cut() ++ str"end")
   | Fix f -> pr_fix pr_constr f
   | CoFix(i,(lna,tl,bl)) ->
@@ -291,7 +293,7 @@ let map_constr_with_named_binders g f l c = match kind_of_term c with
   | App (c,al) -> mkApp (f l c, Array.map (f l) al)
   | Proj (p,c) -> mkProj (p, f l c)
   | Evar (e,al) -> mkEvar (e, Array.map (f l) al)
-  | Case (ci,p,c,bl) -> mkCase (ci, f l p, f l c, Array.map (f l) bl)
+  | Case (ci,p,i,c,bl) -> mkCase (ci, f l p, Array.map (f l) i, f l c, Array.map (Option.map (f l)) bl)
   | Fix (ln,(lna,tl,bl)) ->
       let l' = Array.fold_left (fun l na -> g na l) l lna in
       mkFix (ln,(lna,Array.map (f l) tl,Array.map (f l') bl))
@@ -349,11 +351,12 @@ let map_constr_with_binders_left_to_right g f l c = match kind_of_term c with
   | Proj (p,c) ->
       mkProj (p, f l c)
   | Evar (e,al) -> mkEvar (e, Array.map_left (f l) al)
-  | Case (ci,p,c,bl) ->
+  | Case (ci,p,i,c,bl) ->
       (* In v8 concrete syntax, predicate is after the term to match! *)
       let c' = f l c in
+      let i' = Array.map_left (f l) i in (* TODO: check the order -jls *)
       let p' = f l p in
-      mkCase (ci, p', c', Array.map_left (f l) bl)
+      mkCase (ci, p', i', c', Array.map_left (Option.map (f l)) bl)
   | Fix (ln,(lna,tl,bl as fx)) ->
       let l' = fold_rec_types g fx l in
       let (tl', bl') = map_left2 (f l) tl (f l') bl in
@@ -388,18 +391,19 @@ let map_constr_with_full_binders g f l cstr = match kind_of_term cstr with
       let c' = f l c in
       let al' = Array.map (f l) al in
       if c==c' && Array.for_all2 (==) al al' then cstr else mkApp (c', al')
-  | Proj (p,c) -> 
+  | Proj (p,c) ->
       let c' = f l c in
 	if c' == c then cstr else mkProj (p, c')
   | Evar (e,al) ->
       let al' = Array.map (f l) al in
       if Array.for_all2 (==) al al' then cstr else mkEvar (e, al')
-  | Case (ci,p,c,bl) ->
+  | Case (ci,p,i,c,bl) ->
       let p' = f l p in
+      let i' = Array.map (f l) i in (* TODO: check order -jls *)
       let c' = f l c in
-      let bl' = Array.map (f l) bl in
-      if p==p' && c==c' && Array.for_all2 (==) bl bl' then cstr else
-        mkCase (ci, p', c', bl')
+      let bl' = Array.map (Option.map (f l)) bl in
+      if p==p' && Array.for_all2 (==) i i' && c==c' && Array.for_all2 (==) bl bl' then cstr else
+        mkCase (ci, p', i', c', bl')
   | Fix (ln,(lna,tl,bl)) ->
       let tl' = Array.map (f l) tl in
       let l' =
@@ -434,7 +438,11 @@ let fold_constr_with_binders g f n acc c = match kind_of_term c with
   | App (c,l) -> Array.fold_left (f n) (f n acc c) l
   | Proj (p,c) -> f n acc c
   | Evar (_,l) -> Array.fold_left (f n) acc l
-  | Case (_,p,c,bl) -> Array.fold_left (f n) (f n (f n acc p) c) bl
+  | Case (_,p,i,c,bl) ->
+    let opt_f x c = match c with
+    | Some c -> f n x c
+    | None -> x in
+    Array.fold_left opt_f (f n (Array.fold_left (f n) (f n acc p) i) c) bl (* TODO: check order -jls *)
   | Fix (_,(lna,tl,bl)) ->
       let n' = iterate g (Array.length tl) n in
       let fd = Array.map2 (fun t b -> (t,b)) tl bl in
@@ -459,7 +467,8 @@ let iter_constr_with_full_binders g f l c = match kind_of_term c with
   | App (c,args) -> f l c; Array.iter (f l) args
   | Proj (p,c) -> f l c
   | Evar (_,args) -> Array.iter (f l) args
-  | Case (_,p,c,bl) -> f l p; f l c; Array.iter (f l) bl
+  | Case (_,p,i,c,bl) -> f l p; Array.iter (f l) i; f l c; Array.iter (Option.iter (f l)) bl
+    (* TODO: check -jls *)
   | Fix (_,(lna,tl,bl)) ->
       let l' = Array.fold_left2 (fun l na t -> g (na,None,t) l) l lna tl in
       Array.iter (f l) tl;
@@ -972,11 +981,11 @@ let coq_unit_judge =
   let na2 = Name (Id.of_string "H") in
   fun () ->
     match !impossible_default_case with
-    | Some fn -> 
+    | Some fn ->
         let (id,type_of_id), ctx = fn () in
 	  make_judge id type_of_id, ctx
     | None ->
 	(* In case the constants id/ID are not defined *)
 	make_judge (mkLambda (na1,mkProp,mkLambda(na2,mkRel 1,mkRel 1)))
-                 (mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2))), 
+                 (mkProd (na1,mkProp,mkArrow (mkRel 1) (mkRel 2))),
        Univ.ContextSet.empty

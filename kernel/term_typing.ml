@@ -25,7 +25,7 @@ open Typeops
 open Fast_typeops
 
 let constrain_type env j poly = function
-  | `None -> 
+  | `None ->
     if not poly then (* Old-style polymorphism *)
       make_polymorphic_if_constant_for_ind env j
     else RegularArity j.uj_type
@@ -53,9 +53,9 @@ let handle_side_effects env body side_eff =
       | SEscheme (cl,_) -> List.map (fun (_,c,cb) -> c,cb) cl in
     let not_exists (c,_) =
       try ignore(Environ.lookup_constant c env); false
-      with Not_found -> true in 
+      with Not_found -> true in
     let cbl = List.filter not_exists cbl in
-    let cname c = 
+    let cname c =
       let name = string_of_con c in
       for i = 0 to String.length name - 1 do
         if name.[i] == '.' || name.[i] == '#' then name.[i] <- '_' done;
@@ -64,11 +64,11 @@ let handle_side_effects env body side_eff =
       | Const (c', _) when eq_constant c c' -> mkRel i
       | _ -> map_constr_with_binders ((+) 1) (fun i x -> sub c i x) i x in
     let rec sub_body c u b i x = match kind_of_term x with
-      | Const (c',u') when eq_constant c c' -> 
-	let subst = 
+      | Const (c',u') when eq_constant c c' ->
+	let subst =
 	  Array.fold_left2 (fun subst l l' -> Univ.LMap.add l l' subst)
 	    Univ.LMap.empty (Instance.to_array u) (Instance.to_array u')
-	in 
+	in
 	  Vars.subst_univs_level_constr subst b
       | _ -> map_constr_with_binders ((+) 1) (fun i x -> sub_body c u b i x) i x in
     let fix_body (c,cb) t =
@@ -81,16 +81,16 @@ let handle_side_effects env body side_eff =
               let b_ty = Typeops.type_of_constant_type env cb.const_type in
               let t = sub c 1 (Vars.lift 1 t) in
 		mkLetIn (cname c, b, b_ty, t)
-	    else 
+	    else
 	      let univs = cb.const_universes in
 		sub_body c (Univ.UContext.instance univs) b 1 (Vars.lift 1 t)
-      | OpaqueDef b -> 
+      | OpaqueDef b ->
           let b = Opaqueproof.force_proof b in
 	  let poly = cb.const_polymorphic in
 	    if not poly then
               let b_ty = Typeops.type_of_constant_type env cb.const_type in
               let t = sub c 1 (Vars.lift 1 t) in
-		mkApp (mkLambda (cname c, b_ty, t), [|b|]) 
+		mkApp (mkLambda (cname c, b_ty, t), [|b|])
 	    else
 	      let univs = cb.const_universes in
 		sub_body c (Univ.UContext.instance univs) b 1 (Vars.lift 1 t)
@@ -102,7 +102,7 @@ let handle_side_effects env body side_eff =
     (Declareops.uniquize_side_effects side_eff)
 
 let hcons_j j =
-  { uj_val = hcons_constr j.uj_val; uj_type = hcons_constr j.uj_type} 
+  { uj_val = hcons_constr j.uj_val; uj_type = hcons_constr j.uj_type}
 
 let feedback_completion_typecheck =
   Option.iter (fun state_id -> Pp.feedback ~state_id Feedback.Complete)
@@ -111,22 +111,22 @@ let check_projection env kn inst body =
   let cannot_recognize () = error ("Cannot recognize a projection") in
   let ctx, m = decompose_lam_assum body in
   let () = if not (isCase m) then cannot_recognize () in
-  let ci, p, c, b = destCase m in
+  let ci, p, i, c, b = destCase m in (* TODO: check i here -jls *)
   let (mib, oib as _specif) = Inductive.lookup_mind_specif env ci.ci_ind in
   let recinfo = match mib.mind_record with
-    | None -> 
+    | None ->
       error ("Trying to declare a primitive projection for a non-record inductive type")
     | Some (_, r) -> r
   in
   let n = mib.mind_nparams in
-  let () = 
+  let () =
     if n + 1 != List.length ctx ||
       not (isRel c) || destRel c != 1 || Array.length b != 1 ||
       not (isLambda p)
     then cannot_recognize ()
   in
-  let (na, t, ty) = destLambda (Vars.subst1 mkProp p) in 
-  let argctx, p = decompose_lam_assum b.(0) in
+  let (na, t, ty) = destLambda (Vars.subst1 mkProp p) in
+  let argctx, p = decompose_lam_assum (Option.get b.(0)) (* TODO: unsafe -jls *) in
   (* No need to check the lambdas as the case is well-formed *)
   let () = if not (isRel p) then cannot_recognize () in
   let var = destRel p in
@@ -139,7 +139,7 @@ let check_projection env kn inst body =
 	     proj_type = ty;
 	     proj_body = body }
   in pb
-  
+
 let infer_declaration env kn dcl =
   match dcl with
   | ParameterEntry (ctx,poly,(t,uctx),nl) ->
@@ -162,7 +162,7 @@ let infer_declaration env kn dcl =
           feedback_completion_typecheck feedback_id;
           j.uj_val, ctx) in
       let def = OpaqueDef (Opaqueproof.create proofterm) in
-      def, RegularArity typ, None, c.const_entry_polymorphic, 
+      def, RegularArity typ, None, c.const_entry_polymorphic,
 	c.const_entry_universes,
 	c.const_entry_inline_code, c.const_entry_secctx
   | DefinitionEntry c ->
@@ -172,7 +172,7 @@ let infer_declaration env kn dcl =
       let (body, ctx), side_eff = Future.join body in
       assert(Univ.ContextSet.is_empty ctx);
       let body = handle_side_effects env body side_eff in
-      let def, typ, proj = 
+      let def, typ, proj =
 	if c.const_entry_proj then
 	  (** This should be the projection defined as a match. *)
 	  let j = infer env body in
@@ -181,7 +181,7 @@ let infer_declaration env kn dcl =
 	  let inst = Univ.UContext.instance c.const_entry_universes in
 	  let pb = check_projection env (Option.get kn) inst body in
 	  (** We build the eta-expanded form. *)
-	  let context, m = decompose_lam_n_assum (pb.proj_npars + 1) body in 
+	  let context, m = decompose_lam_n_assum (pb.proj_npars + 1) body in
 	  let body' = mkProj (Option.get kn, mkRel 1) in
 	  let body = it_mkLambda_or_LetIn body' context in
 	    Def (Mod_subst.from_val (hcons_constr body)),
@@ -228,7 +228,7 @@ let build_constant_declaration kn env (def,typ,proj,poly,univs,inline_code,ctx) 
   let hyps, def =
     let context_ids = List.map pi1 (named_context env) in
     match ctx with
-    | None when not (List.is_empty context_ids) -> 
+    | None when not (List.is_empty context_ids) ->
         (* No declared section vars, and non-empty section context:
            we must look at the body NOW, if any *)
         let ids_typ = global_vars_set_constant_type env typ in
@@ -266,7 +266,7 @@ let build_constant_declaration kn env (def,typ,proj,poly,univs,inline_code,ctx) 
               let ids_def = global_vars_set env c in
               let inferred = keep_hyps env (Idset.union ids_typ ids_def) in
               check declared inferred) lc) in
-  let tps = 
+  let tps =
     match proj with
     | None -> Cemitcodes.from_val (compile_constant_body env def)
     | Some pb ->

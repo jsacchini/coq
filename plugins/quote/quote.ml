@@ -230,7 +230,10 @@ let compute_ivs f cs gl =
         let sigma = Proofview.Goal.sigma gl in
         let is_conv = Reductionops.is_conv env sigma in
           begin match decomp_term body3 with
-          | Case(_,p,c,lci) -> (* <p> Case c of c1 ... cn end *)
+          | Case(_,p,_,c,lci) -> (* <p> Case c of c1 ... cn end *) (* ignoring indices -jls *)
+              (* Removing impossible branches -jls *)
+              let lci = Array.of_list
+                (List.map Option.get (List.filter Option.has_some (Array.to_list lci))) in
               let n_lhs_rhs = ref []
               and v_lhs = ref (None : constr option)
               and c_lhs = ref (None : constr option) in

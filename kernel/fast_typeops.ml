@@ -29,7 +29,21 @@ let conv_leq_vecti env v1 v2 =
     v1
     v2
 
-let check_constraints cst env = 
+let conv_leq_vecti_opt env v1 v2 =
+  Array.fold_left2_i
+    (fun i _ t1 t2 ->
+      match t1, t2 with
+      | Some t1, Some t2 -> begin
+        try conv_leq false env t1 t2
+        with NotConvertible -> raise (NotConvertibleVect i)
+        end
+      | None, None -> ()
+      | _, _ -> anomaly (Pp.str "Missing branch or type in extended match."))
+    ()
+    v1
+    v2
+
+let check_constraints cst env =
   if Environ.check_constraints cst env then ()
   else error_unsatisfied_constraints env cst
 
@@ -146,14 +160,14 @@ let judge_of_abstraction env name var ty =
 
 (* Type of an application. *)
 
-let make_judgev c t = 
+let make_judgev c t =
   Array.map2 make_judge c t
 
 let judge_of_apply env func funt argsv argstv =
   let len = Array.length argsv in
-  let rec apply_rec i typ = 
+  let rec apply_rec i typ =
     if Int.equal i len then typ
-    else 
+    else
       (match kind_of_term (whd_betadeltaiota env typ) with
       | Prod (_,c1,c2) ->
 	let arg = argsv.(i) and argt = argstv.(i) in
@@ -165,9 +179,9 @@ let judge_of_apply env func funt argsv argstv =
 	       (i+1,c1,argt)
 	       (make_judge func funt)
 	       (make_judgev argsv argstv))
-	    
+
       | _ ->
-	error_cant_apply_not_functional env 
+	error_cant_apply_not_functional env
 	  (make_judge func funt)
 	  (make_judgev argsv argstv))
   in apply_rec 0 funt
@@ -250,7 +264,7 @@ let judge_of_cast env c ct k expected_type =
 let judge_of_inductive_knowing_parameters env (ind,u as indu) args =
   let (mib,mip) as spec = lookup_mind_specif env ind in
   check_hyps_inclusion env mkIndU indu mib.mind_hyps;
-  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters 
+  let t,cst = Inductive.constrained_type_of_inductive_knowing_parameters
     env (spec,u) args
   in
     check_constraints cst env;
@@ -278,20 +292,29 @@ let judge_of_constructor env (c,u as cu) =
 (* Case. *)
 
 let check_branch_types env (ind,u) c ct lft explft =
-  try conv_leq_vecti env lft explft
+  try conv_leq_vecti_opt env lft explft
   with
       NotConvertibleVect i ->
-        error_ill_formed_branch env c ((ind,i+1),u) lft.(i) explft.(i)
+        error_ill_formed_branch env c ((ind,i+1),u) (Option.get lft.(i))
+          (Option.get explft.(i)) (* this should be safe -jls *)
     | Invalid_argument _ ->
         error_number_branches env (make_judge c ct) (Array.length explft)
 
-let judge_of_case env ci p pt c ct lf lft =
+let judge_of_case env ci p pt idx idxt c ct lf (lft : constr option array) =
   let (pind, _ as indspec) =
     try find_rectype env ct
     with Not_found -> error_case_not_inductive env (make_judge c ct) in
   let _ = check_case_info env pind ci in
   let (bty,rslty) =
-    type_case_branches env indspec (make_judge p pt) c in
+    if Int.equal (Array.length idx) 0 then
+      (* No indices. Proceed normally *)
+      let (bty,rslty) =
+        type_case_branches env indspec (make_judge p pt) idx c in
+        (Array.map (fun x -> Some x) bty, rslty)
+    else
+      (* Extended match *)
+      type_extended_case_branches env indspec (make_judge p pt) lf c
+  in
   let () = check_branch_types env pind c ct lft bty in
     rslty
 
@@ -305,7 +328,7 @@ let judge_of_projection env p c ct =
     let usubst = make_inductive_subst (fst (lookup_mind_specif env ind)) u in
     let ty = Vars.subst_univs_level_constr usubst pb.Declarations.proj_type in
       substl (c :: List.rev args) ty
-      
+
 
 (* Fixpoints. *)
 
@@ -332,7 +355,7 @@ let rec execute env cstr =
     (* Atomic terms *)
     | Sort (Prop c) ->
       judge_of_prop_contents c
-	
+
     | Sort (Type u) ->
       judge_of_type u
 
@@ -344,7 +367,7 @@ let rec execute env cstr =
 
     | Const c ->
       judge_of_constant env c
-	
+
     | Proj (p, c) ->
         let ct = execute env c in
           judge_of_projection env p c ct
@@ -402,22 +425,38 @@ let rec execute env cstr =
     | Construct c ->
       judge_of_constructor env c
 
-    | Case (ci,p,c,lf) ->
+    | Case (ci,p,i,c,lf) ->
         let ct = execute env c in
-        let pt = execute env p in
-        let lft = execute_array env lf in
-          judge_of_case env ci p pt c ct lf lft
+        let it = execute_array env i in
+        let rec mk_predicate n env ctx pred idxs idxts =
+          match kind_of_term pred, idxs, idxts with
+            Lambda(name,c1,c2), d::ds, tp::tps ->
+	      (try
+	         let () = conv_leq false env (lift n tp) c1 in
+	           mk_predicate (n+1) (push_rel (name,Some (lift n d),c1) env)
+                     ((name,c1) :: ctx) c2 ds tps
+	       with NotConvertible ->
+                 error_actual_type env (make_judge d tp) c1)
+          | _, [], [] -> env, pred, ctx
+          | _, _, _ -> anomaly (Pp.str "execute case") in
+        let env', p', ctx =
+          mk_predicate 0 env [] p (Array.to_list i) (Array.to_list it) in
+        (* let pt = execute env p in *)
+        let pt = execute env' p' in
+        let pt' = List.fold_left (fun c2 (n,c1) -> mkProd (n,c1,c2)) pt ctx in
+        let lft = execute_array_opt env lf in
+          judge_of_case env ci p pt' i it c ct lf lft
 
     | Fix ((vn,i as vni),recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let fix = (vni,recdef') in
         check_fix env fix; fix_ty
-	  
+
     | CoFix (i,recdef) ->
       let (fix_ty,recdef') = execute_recdef env recdef i in
       let cofix = (i,recdef') in
         check_cofix env cofix; fix_ty
-	  
+
     (* Partial proofs: unsupported by the kernel *)
     | Meta _ ->
 	anomaly (Pp.str "the kernel does not support metavariables")
@@ -442,13 +481,14 @@ and execute_recdef env (names,lar,vdef) i =
     (lara.(i),(names,lara,vdef))
 
 and execute_array env = Array.map (execute env)
+and execute_array_opt env = Array.map (Option.map (execute env))
 
 (* Derived functions *)
 let infer env constr =
   let t = execute env constr in
     make_judge constr t
 
-let infer = 
+let infer =
   if Flags.profile then
     let infer_key = Profile.declare_profile "Fast_infer" in
       Profile.profile2 infer_key infer

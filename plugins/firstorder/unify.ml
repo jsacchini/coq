@@ -59,15 +59,26 @@ let unif t1 t2=
  	  | _,Cast(_,_,_)->Queue.add (nt1,strip_outer_cast nt2) bige
 	  | (Prod(_,a,b),Prod(_,c,d))|(Lambda(_,a,b),Lambda(_,c,d))->
 	      Queue.add (a,c) bige;Queue.add (pop b,pop d) bige
-	  | Case (_,pa,ca,va),Case (_,pb,cb,vb)->
+	  | Case (_,pa,ia,ca,va),Case (_,pb,ib,cb,vb)->
 	      Queue.add (pa,pb) bige;
+              let il = Array.length ia in (* indices must match -jls *)
+                if not (Int.equal il (Array.length ib)) then
+                  raise (UFAIL (nt1,nt2))
+                else
+                  for i=0 to il-1 do
+                    Queue.add (ia.(i),ib.(i)) bige
+                  done;
 	      Queue.add (ca,cb) bige;
 	      let l=Array.length va in
 		if not (Int.equal l (Array.length vb)) then
 		  raise (UFAIL (nt1,nt2))
 		else
 		  for i=0 to l-1 do
-		    Queue.add (va.(i),vb.(i)) bige
+		    (* Queue.add (va.(i),vb.(i)) bige *)
+                    match va.(i), vb.(i) with
+                    | Some x, Some y -> Queue.add (x,y) bige
+                    | None, None -> ()
+                    | _, _ -> raise (UFAIL (nt1, nt2))
 		  done
 	  | App(ha,va),App(hb,vb)->
 	      Queue.add (ha,hb) bige;

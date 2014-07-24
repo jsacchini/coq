@@ -35,7 +35,7 @@ type cbv_value =
 and cbv_stack =
   | TOP
   | APP of cbv_value array * cbv_stack
-  | CASE of constr * constr array * case_info * cbv_value subs * cbv_stack
+  | CASE of constr * constr array * constr option array * case_info * cbv_value subs * cbv_stack
   | PROJ of projection * Declarations.projection_body * cbv_stack
 
 val shift_value : int -> cbv_value -> cbv_value
@@ -46,10 +46,13 @@ val strip_appl : cbv_value -> cbv_stack -> cbv_value * cbv_stack
 (** recursive functions... *)
 val cbv_stack_term : cbv_infos ->
   cbv_stack -> cbv_value subs -> constr -> cbv_value
-val cbv_norm_term : cbv_infos -> cbv_value subs -> constr -> constr
+
+(* Not needed? -jls *)
+(* val cbv_norm_term : cbv_infos -> cbv_value subs -> constr -> constr *)
+
 val norm_head : cbv_infos ->
   cbv_value subs -> constr -> cbv_stack -> cbv_value * cbv_stack
 val apply_stack : cbv_infos -> constr -> cbv_stack -> constr
-val cbv_norm_value : cbv_infos -> cbv_value -> constr
+(* val cbv_norm_value : cbv_infos -> cbv_value -> constr *)
 
 (** End of cbv debug section i*)

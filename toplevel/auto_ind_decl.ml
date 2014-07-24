@@ -187,7 +187,7 @@ let build_beq_scheme kn =
         | Var x -> mkVar (id_of_string ("eq_"^(string_of_id x))), Declareops.no_seff
         | Cast (x,_,_) -> aux (applist (x,a))
         | App _ -> assert false
-        | Ind ((kn',i as ind'),u) (*FIXME: universes *) -> 
+        | Ind ((kn',i as ind'),u) (*FIXME: universes *) ->
             if eq_mind kn kn' then mkRel(eqA-nlist-i+nb_ind-1), Declareops.no_seff
             else begin
               try
@@ -201,7 +201,7 @@ let build_beq_scheme kn =
                     (Declareops.flatten_side_effects (List.rev effs))
                     eff in
                 let args =
-                  Array.append 
+                  Array.append
                     (Array.of_list (List.map (fun x -> lift lifti x) a)) eqa in
                 if Int.equal (Array.length args) 0 then eq, eff
                 else mkApp (eq, args), eff
@@ -280,14 +280,14 @@ let build_beq_scheme kn =
 	    done;
 
 	  ar.(i) <- (List.fold_left (fun a (p,q,r) -> mkLambda (p,r,a))
-			(mkCase (ci,do_predicate rel_list nb_cstr_args,
-				  mkVar (Id.of_string "Y") ,ar2))
+			(mkCaseNoIndex (ci,do_predicate rel_list nb_cstr_args,
+				  mkVar (Id.of_string "Y") ,ar2)) (* no index -jls *)
 			 (constrsi.(i).cs_args))
 	done;
         mkNamedLambda (Id.of_string "X") (mkFullInd ind (nb_ind-1+1))  (
           mkNamedLambda (Id.of_string "Y") (mkFullInd ind (nb_ind-1+2))  (
- 	    mkCase (ci, do_predicate rel_list 0,mkVar (Id.of_string "X"),ar))),
-        !eff
+ 	    mkCaseNoIndex (ci, do_predicate rel_list 0,mkVar (Id.of_string "X"),ar))),
+        !eff (* no index -jls *)
     in (* build_beq_scheme *)
     let names = Array.make nb_ind Anonymous and
         types = Array.make nb_ind mkSet and
@@ -430,7 +430,7 @@ let do_replace_bl bl_scheme_key (ind,u as indu) aavoid narg lft rgt =
              then Tacticals.New.tclTHENLIST [Equality.replace t1 t2; Auto.default_auto ; aux q1 q2 ]
              else (
                let bl_t1, eff =
-               try 
+               try
                  let c, eff = find_scheme bl_scheme_key (out_punivs u) (*FIXME*) in
                  mkConst c, eff
                with Not_found ->
@@ -506,8 +506,8 @@ let eqI ind l =
   let list_id = list_id l in
   let eA = Array.of_list((List.map (fun (s,_,_,_) -> mkVar s) list_id)@
                            (List.map (fun (_,seq,_,_)-> mkVar seq) list_id ))
-  and e, eff = 
-    try let c, eff = find_scheme beq_scheme_kind ind in mkConst c, eff 
+  and e, eff =
+    try let c, eff = find_scheme beq_scheme_kind ind in mkConst c, eff
     with Not_found -> error
         ("The boolean equality on "^(string_of_mind (fst ind))^" is needed.");
   in (if Array.equal eq_constr eA [||] then e else mkApp(e,eA)), eff
@@ -834,7 +834,7 @@ let compute_dec_goal ind lnamesparrec nparrec =
       )
 
 let compute_dec_tact ind lnamesparrec nparrec =
-  let eq = Lazy.force eq and tt = Lazy.force tt 
+  let eq = Lazy.force eq and tt = Lazy.force tt
   and ff = Lazy.force ff and bb = Lazy.force bb in
   let list_id = list_id lnamesparrec in
   let eqI, eff = eqI ind lnamesparrec in

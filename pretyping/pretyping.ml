@@ -698,7 +698,7 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
 	      let ind,_ = dest_ind_family indf in
 	      let ci = make_case_info env (fst ind) LetStyle in
 		Typing.check_allowed_sort env !evdref ind cj.uj_val p;
-		mkCase (ci, p, cj.uj_val,[|f|]) in
+		mkCaseNoIndex (ci, p, cj.uj_val,[|f|]) in (* TODO: ignoring indices -jls *)
 	      { uj_val = v; uj_type = substl (realargs@[cj.uj_val]) ccl }
 
 	  | None ->
@@ -718,7 +718,7 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
 	      let ind,_ = dest_ind_family indf in
 	      let ci = make_case_info env (fst ind) LetStyle in
 		Typing.check_allowed_sort env !evdref ind cj.uj_val p;
-		mkCase (ci, p, cj.uj_val,[|f|])
+		mkCaseNoIndex (ci, p, cj.uj_val,[|f|]) (* TODO: ignoring indices -jls *)
 	    in { uj_val = v; uj_type = ccl })
 
   | GIf (loc,c,(na,po),b1,b2) ->
@@ -783,7 +783,7 @@ let rec pretype resolve_tc (tycon : type_constraint) env evdref lvar t =
 	let ci = make_case_info env (fst ind) IfStyle in
 	let pred = nf_evar !evdref pred in
 	  Typing.check_allowed_sort env !evdref ind cj.uj_val pred;
-	  mkCase (ci, pred, cj.uj_val, [|b1;b2|])
+	  mkCaseNoIndex (ci, pred, cj.uj_val, [|b1;b2|]) (* TODO: ignoring indices -jls *)
       in
 	{ uj_val = v; uj_type = p }
 

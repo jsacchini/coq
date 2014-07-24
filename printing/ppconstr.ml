@@ -123,8 +123,8 @@ let pr_patvar = pr_id
 let pr_glob_sort_instance = function
   | GProp -> str "Prop"
   | GSet -> str "Set"
-  | GType u -> 
-    (match u with 
+  | GType u ->
+    (match u with
     | Some u -> str u
     | None -> str "Type")
 
@@ -386,16 +386,20 @@ let pr_recursive pr_decl id = function
         (pr_decl true) dl ++
       fnl() ++ str "for " ++ pr_id id
 
-let pr_asin pr (na,indnalopt) =
+let pr_asin pr (na,indnalopt,idxs) =
   (match na with (* Decision of printing "_" or not moved to constrextern.ml *)
     | Some na -> spc () ++ str "as " ++  pr_lname na
     | None -> mt ()) ++
   (match indnalopt with
     | None -> mt ()
-    | Some t -> spc () ++ str "in " ++ pr_patt lsimplepatt t)
+    | Some t -> spc () ++ str "in " ++ pr_patt lsimplepatt t) ++
+    (match idxs with
+    | None -> str " where []"
+    | Some idxs -> str " where " ++ prlist_with_sep (fun () -> str ", ")
+      (fun (ni, d) -> pr_lname ni ++ str " := " ++ pr d (*TODO -jls *)) idxs)
 
 let pr_case_item pr (tm,asin) =
-  hov 0 (pr (lcast,E) tm ++ pr_asin pr asin)
+  hov 0 (pr (lcast,E) tm ++ pr_asin (pr (lcast,E)) asin)
 
 let pr_case_type pr po =
   match po with
@@ -513,7 +517,7 @@ let pr pr sep inherited a =
       hv 0 (
 	str "let '" ++
 	  hov 0 (pr_patt ltop p ++
-		 pr_asin (pr_dangling_with_for mt pr) asin ++
+		 pr_asin (pr mt ltop) (* (pr_dangling_with_for mt pr) *) asin ++
 		 str " :=" ++ pr spc ltop c ++
 		 pr_case_type (pr_dangling_with_for mt pr) rtntypopt ++
 		 str " in" ++ pr spc ltop b)),

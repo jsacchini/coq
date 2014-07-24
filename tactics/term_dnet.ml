@@ -274,7 +274,8 @@ struct
           meta
       in
       Meta meta
-    | Case (ci,c1,c2,ca)     ->
+    | Case (ci,c1,_,c2,ca)     -> (* ignoring indices -jls *)
+      let ca = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list ca))) in (* ignore impossible branches -jls *)
       Term(DCase(ci,pat_of_constr c1,pat_of_constr c2,Array.map pat_of_constr ca))
     | Fix ((ia,i),(_,ta,ca)) ->
       Term(DFix(ia,i,Array.map pat_of_constr ta, Array.map pat_of_constr ca))
@@ -287,7 +288,7 @@ struct
     | App (f,ca)     ->
       Array.fold_left (fun c a -> Term (DApp (c,a)))
         (pat_of_constr f) (Array.map pat_of_constr ca)
-    | Proj (p,c) -> 
+    | Proj (p,c) ->
         Term (DApp (Term (DRef (ConstRef p)), pat_of_constr c))
 
     and ctx_of_constr ctx c = match kind_of_term c with

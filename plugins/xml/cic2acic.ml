@@ -207,7 +207,7 @@ let typeur sigma metamap =
     | T.Evar ev -> Evd.existential_type sigma ev
     | T.Ind ind -> Inductiveops.type_of_inductive env ind
     | T.Construct cstr -> Inductiveops.type_of_constructor env cstr
-    | T.Case (_,p,c,lf) ->
+    | T.Case (_,p,_,c,lf) -> (* ignoring indices *)
         let Inductiveops.IndType(_,realargs) =
           try Inductiveops.find_rectype env sigma (type_of env c)
           with Not_found -> Errors.anomaly ~label:"type_of" (Pp.str "Bad recursive type") in
@@ -701,7 +701,8 @@ print_endline "PASSATO" ; flush stdout ;
                 explicit_substitute_and_eta_expand_if_required tt []
                  (List.map snd subst')
                  compute_result_if_eta_expansion_not_required
-           | Term.Case ({Term.ci_ind=(kn,i)},ty,term,a) ->
+           | Term.Case ({Term.ci_ind=(kn,i)},ty,_,term,a) -> (* ignoring indices. Maybe ACase should have indices as well -jls *)
+             let a = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list a))) in  (* ignoring impossible branches -jls *)
               Hashtbl.add ids_to_inner_sorts fresh_id'' innersort ;
               if is_a_Prop innersort then
                add_inner_type fresh_id'' ;

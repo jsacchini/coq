@@ -352,14 +352,14 @@ let check_meta_variables c =
 let check_conv_leq_goal env sigma arg ty conclty =
   if !check then
     let evm, b = Reductionops.infer_conv env sigma ty conclty in
-      if b then evm 
+      if b then evm
       else raise (RefinerError (BadType (arg,ty,conclty)))
   else sigma
 
 exception Stop of constr list
 let meta_free_prefix a =
   try
-    let _ = Array.fold_left (fun acc a -> 
+    let _ = Array.fold_left (fun acc a ->
       if occur_meta a then raise (Stop acc)
       else a :: acc) [] a
     in a
@@ -405,7 +405,7 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
       | App (f,l) ->
 	let (acc',hdty,sigma,applicand) =
 	  if is_template_polymorphic env f then
-	    let sigma, ty = 
+	    let sigma, ty =
 	      (* Template sort-polymorphism of definition and inductive types *)
 	      type_of_global_reference_knowing_conclusion env sigma f conclty
 	    in
@@ -424,9 +424,10 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
 	let ty = get_type_of env sigma c in
 	  (acc',ty,sigma,c)
 
-      | Case (ci,p,c,lf) ->
+      | Case (ci,p,_,c,lf) -> (* No idea; ignoring indices -jls *)
 	let (acc',lbrty,conclty',sigma,p',c') = mk_casegoals sigma goal goalacc p c in
 	let sigma = check_conv_leq_goal env sigma trm conclty' conclty in
+        let lf = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list lf))) in (* ignore impossible branches -jls *)
 	let (acc'',sigma, rbranches) =
 	  Array.fold_left2
             (fun (lacc,sigma,bacc) ty fi ->
@@ -436,7 +437,7 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
         let lf' = Array.rev_of_list rbranches in
         let ans =
           if p' == p && c' == c && Array.equal (==) lf' lf then trm
-          else Term.mkCase (ci,p',c',lf')
+          else Term.mkCaseNoIndex (ci,p',c',lf') (* no index -jls *)
         in
 	(acc'',conclty',sigma, ans)
 
@@ -453,7 +454,7 @@ let rec mk_refgoals sigma goal goalacc conclty trm =
 and mk_hdgoals sigma goal goalacc trm =
   let env = Goal.V82.env sigma goal in
   let hyps = Goal.V82.hyps sigma goal in
-  let mk_goal hyps concl = 
+  let mk_goal hyps concl =
     Goal.V82.mk_goal sigma hyps concl (Goal.V82.extra sigma goal) in
   match kind_of_term trm with
     | Cast (c,_, ty) when isMeta c ->
@@ -469,7 +470,7 @@ and mk_hdgoals sigma goal goalacc trm =
 	let (acc',hdty,sigma,applicand) =
 	  if is_template_polymorphic env f
 	  then
-	    let l' = meta_free_prefix l in	      
+	    let l' = meta_free_prefix l in
 	   (goalacc,type_of_global_reference_knowing_parameters env sigma f l',sigma,f)
 	  else mk_hdgoals sigma goal goalacc f
 	in
@@ -477,8 +478,9 @@ and mk_hdgoals sigma goal goalacc trm =
         let ans = if applicand == f && args == l then trm else Term.mkApp (applicand, args) in
 	(acc'',conclty',sigma, ans)
 
-    | Case (ci,p,c,lf) ->
+    | Case (ci,p,_,c,lf) -> (* ignoring indices -jls *)
 	let (acc',lbrty,conclty',sigma,p',c') = mk_casegoals sigma goal goalacc p c in
+        let lf = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list lf))) in (* ignore impossible branches -jls *)
 	let (acc'',sigma,rbranches) =
 	  Array.fold_left2
             (fun (lacc,sigma,bacc) ty fi ->
@@ -488,7 +490,7 @@ and mk_hdgoals sigma goal goalacc trm =
 	let lf' = Array.rev_of_list rbranches in
 	let ans =
           if p' == p && c' == c && Array.equal (==) lf' lf then trm
-          else Term.mkCase (ci,p',c',lf')
+          else Term.mkCaseNoIndex (ci,p',c',lf') (* no index -jls *)
 	in
 	(acc'',conclty',sigma, ans)
 
@@ -556,8 +558,8 @@ let prim_refiner r sigma goal =
   let env = Goal.V82.env sigma goal in
   let sign = Goal.V82.hyps sigma goal in
   let cl = Goal.V82.concl sigma goal in
-  let mk_goal hyps concl = 
-    Goal.V82.mk_goal sigma hyps concl (Goal.V82.extra sigma goal) 
+  let mk_goal hyps concl =
+    Goal.V82.mk_goal sigma hyps concl (Goal.V82.extra sigma goal)
   in
   match r with
     (* Logical rules *)
@@ -568,14 +570,14 @@ let prim_refiner r sigma goal =
 	   | Prod (_,c1,b) ->
 	       let (sg,ev,sigma) = mk_goal (push_named_context_val (id,None,c1) sign)
 			  (subst1 (mkVar id) b) in
-               let sigma = 
+               let sigma =
 		 Goal.V82.partial_solution sigma goal (mkNamedLambda id c1 ev) in
 	       ([sg], sigma)
 	   | LetIn (_,c1,t1,b) ->
 	       let (sg,ev,sigma) =
 		 mk_goal (push_named_context_val (id,Some c1,t1) sign)
 		   (subst1 (mkVar id) b) in
-	       let sigma = 
+	       let sigma =
 		 Goal.V82.partial_solution sigma goal (mkNamedLetIn id c1 t1 ev) in
 	       ([sg], sigma)
 	   | _ ->
@@ -594,7 +596,7 @@ let prim_refiner r sigma goal =
             (if !check && mem_named_context id (named_context_of_val sign) then
 	      error ("Variable " ^ Id.to_string id ^ " is already declared.");
 	     push_named_context_val (id,None,t) sign,t,cl,sigma) in
-        let (sg2,ev2,sigma) = 
+        let (sg2,ev2,sigma) =
 	  Goal.V82.mk_goal sigma sign cl (Goal.V82.extra sigma goal) in
 	let oterm = Term.mkApp (mkNamedLambda id t ev2 , [| ev1 |]) in
 	let sigma = Goal.V82.partial_solution sigma goal oterm in
@@ -668,7 +670,7 @@ let prim_refiner r sigma goal =
               with
               |	Not_found ->
                   mk_sign (push_named_context_val (f,None,ar) sign) oth)
-	  | [] -> 
+	  | [] ->
               Evd.Monad.List.map (fun (_,c) sigma ->
                 let gl,ev,sigma =
                   Goal.V82.mk_goal sigma sign c (Goal.V82.extra sigma goal) in

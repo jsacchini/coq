@@ -83,7 +83,8 @@ type ('constr, 'types) kind_of_term = ('constr, 'types) Constr.kind_of_term =
   | Const     of constant puniverses
   | Ind       of inductive puniverses
   | Construct of constructor puniverses
-  | Case      of case_info * 'constr * 'constr * 'constr array
+  | Case      of case_info * 'constr * 'constr array * 'constr *
+                 'constr option array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
   | Proj      of constant * 'constr
@@ -181,7 +182,7 @@ Ci(...yij...) => ti | ... end] (or [let (..y1i..) := c as x in I args
 return P in t1], or [if c then t1 else t2])
 @return [(info,c,fun args x => P,[|...|fun yij => ti| ...|])]
 where [info] is pretty-printing information *)
-val destCase : constr -> case_info * constr * constr * constr array
+val destCase : constr -> case_info * constr * constr array * constr * constr option array
 
 (** Destructs the {% $ %}i{% $ %}th function of the block
    [Fixpoint f{_ 1} ctx{_ 1} = b{_ 1}
@@ -412,7 +413,8 @@ val mkConstU : constant puniverses -> constr
 val mkIndU : inductive puniverses -> constr
 val mkConstructU : constructor puniverses -> constr
 val mkConstructUi : (pinductive * int) -> constr
-val mkCase : case_info * constr * constr * constr array -> constr
+val mkCase : case_info * constr * constr array * constr * constr option array -> constr
+val mkCaseNoIndex : case_info * constr * constr * constr array -> constr
 val mkFix : fixpoint -> constr
 val mkCoFix : cofixpoint -> constr
 
@@ -425,7 +427,7 @@ val eq_constr : constr -> constr -> bool
    application grouping and the universe constraints in [u]. *)
 val eq_constr_univs : constr Univ.check_function
 
-(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo 
+(** [leq_constr_univs u a b] is [true] if [a] is convertible to [b] modulo
     alpha, casts, application grouping and the universe constraints in [u]. *)
 val leq_constr_univs : constr Univ.check_function
 

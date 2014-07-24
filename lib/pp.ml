@@ -16,7 +16,7 @@ module Glue : sig
      I.e. if the short list is the second argument
   *)
   type 'a t
-  
+
   val atom : 'a -> 'a t
   val glue : 'a t -> 'a t -> 'a t
   val empty : 'a t
@@ -513,6 +513,23 @@ let prvecti elem v = prvecti_with_sep mt elem v
    [pr a ++ sep() ++ ... ++ sep() ++ pr c] *)
 
 let prvect_with_sep sep elem v = prvecti_with_sep sep (fun _ -> elem) v
+
+(* [prvect_with_sep_opt sep pr emp [|a ; ... ; c|]] outputs
+   [pr a ++ sep() ++ ... ++ sep() ++ pr c] *)
+
+let prvect_with_sep_opt sep elem emp v =
+  let pr_opt i = match v.(i) with
+  | Some x -> elem x
+  | None -> emp () in
+  let rec pr i =
+    if Int.equal i 0 then
+      pr_opt 0
+    else
+      let r = pr (i-1) and s = sep () and e = pr_opt i in
+        r ++ s ++ e
+  in
+    let n = Array.length v in
+      if Int.equal n 0 then mt () else pr (n-1)
 
 (* [prvect pr [|a ; ... ; c|]] outputs [pr a ++ ... ++ pr c] *)
 

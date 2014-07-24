@@ -204,10 +204,10 @@ and nf_stk env c t stk  =
 	let b = nf_val (push_rel_context decl env) v codom in
 	it_mkLambda_or_LetIn b decl
       in
-      let branchs = Array.mapi mkbranch bsw in
+      let branchs = Array.map (fun x -> Some x) (* fix -jls *) (Array.mapi mkbranch bsw) in
       let tcase = build_case_type dep p realargs c in
       let ci = case_info sw in
-      nf_stk env (mkCase(ci, p, c, branchs)) tcase stk
+      nf_stk env (mkCase(ci, p, [||], c, branchs)) tcase stk (* TODO: empty array -jls *)
 
 and nf_predicate env ind mip params v pT =
   match whd_val v, kind_of_term pT with
@@ -302,4 +302,3 @@ let cbv_vm env c t  =
   let c = nf_val env v t in
   if not transp then set_transp_values false;
   c
-

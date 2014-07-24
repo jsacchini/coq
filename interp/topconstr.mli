@@ -32,7 +32,7 @@ val split_at_annot : local_binder list -> Id.t located option -> local_binder li
 val fold_constr_expr_with_binders : (Id.t -> 'a -> 'a) ->
    ('a -> 'b -> constr_expr -> 'b) -> 'a -> 'b -> constr_expr -> 'b
 
-(** Used in correctness and interface; absence of var capture not guaranteed 
+(** Used in correctness and interface; absence of var capture not guaranteed
    in pattern-matching clauses and in binders of the form [x,y:T(x)] *)
 
 val map_constr_expr_with_binders :

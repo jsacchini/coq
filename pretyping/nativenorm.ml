@@ -49,7 +49,7 @@ let app_type env c =
   let t = whd_betadeltaiota env c in
   try destApp t with DestKO -> (t,[||])
 
- 
+
 let find_rectype_a env c =
   let (t, l) = app_type env c in
   match kind_of_term t with
@@ -58,13 +58,13 @@ let find_rectype_a env c =
 
 (* Instantiate inductives and parameters in constructor type *)
 
-let type_constructor mind mib typ params = 
+let type_constructor mind mib typ params =
   let s = ind_subst mind mib Univ.Instance.empty (* FIXME *)in
   let ctyp = substl s typ in
   let nparams = Array.length params in
   if Int.equal nparams 0 then ctyp
   else
-    let _,ctyp = decompose_prod_n nparams ctyp in   
+    let _,ctyp = decompose_prod_n nparams ctyp in
     substl (List.rev (Array.to_list params)) ctyp
 
 let construct_of_constr_notnative const env tag (mind, _ as ind) u allargs =
@@ -81,16 +81,16 @@ let construct_of_constr_notnative const env tag (mind, _ as ind) u allargs =
   let i = invert_tag const tag mip.mind_reloc_tbl in
   let ctyp = type_constructor mind mib (mip.mind_nf_lc.(i-1)) params in
   (mkApp(mkConstructU((ind,i),u), params), ctyp)
- 
+
 
 let construct_of_constr const env tag typ =
   let t, l = app_type env typ in
   match kind_of_term t with
-  | Ind (ind,u) -> 
+  | Ind (ind,u) ->
       construct_of_constr_notnative const env tag ind u l
   | _ -> assert false
 
-let construct_of_constr_const env tag typ = 
+let construct_of_constr_const env tag typ =
   fst (construct_of_constr true env tag typ)
 
 let construct_of_constr_block = construct_of_constr false
@@ -106,7 +106,7 @@ let build_branches_type env (mind,_ as _ind) mib mip params dep p =
     let nparams = Array.length params in
     let carity = snd (rtbl.(i)) in
     let crealargs = Array.sub cargs nparams (Array.length cargs - nparams) in
-    let codom = 
+    let codom =
       let papp = mkApp(lift (List.length decl) p,crealargs) in
       if dep then
 	let cstr = ith_constructor_of_inductive (fst ind) (i+1) in
@@ -114,27 +114,27 @@ let build_branches_type env (mind,_ as _ind) mib mip params dep p =
 	let dep_cstr = mkApp(mkApp(mkConstructU (cstr,snd ind),params),relargs) in
 	mkApp(papp,[|dep_cstr|])
       else papp
-    in 
+    in
     decl, codom
   in Array.mapi build_one_branch mip.mind_nf_lc
 
-let build_case_type dep p realargs c = 
+let build_case_type dep p realargs c =
   if dep then mkApp(mkApp(p, realargs), [|c|])
   else mkApp(p, realargs)
 
 (* TODO move this function *)
-let type_of_rel env n = 
+let type_of_rel env n =
   let (_,_,ty) = lookup_rel n env in
   lift n ty
 
 let type_of_prop = mkSort type1_sort
 
-let type_of_sort s = 
+let type_of_sort s =
   match s with
   | Prop _ -> type_of_prop
   | Type u -> mkType (Univ.super u)
 
-let type_of_var env id = 
+let type_of_var env id =
   try let (_,_,ty) = lookup_named id env in ty
   with Not_found ->
     anomaly ~label:"type_of_var" (str "variable " ++ Id.print id ++ str " unbound")
@@ -164,11 +164,11 @@ let sort_of_product env domsort rangsort =
 
 (* normalisation of values *)
 
-let branch_of_switch lvl ans bs = 
+let branch_of_switch lvl ans bs =
   let tbl = ans.asw_reloc in
-  let branch i = 
+  let branch i =
     let tag,arity = tbl.(i) in
-    let ci = 
+    let ci =
       if Int.equal arity 0 then mk_const tag
       else mk_block tag (mk_rels_accu lvl arity) in
     bs ci in
@@ -177,9 +177,9 @@ let branch_of_switch lvl ans bs =
 let rec nf_val env v typ =
   match kind_of_value v with
   | Vaccu accu -> nf_accu env accu
-  | Vfun f -> 
+  | Vfun f ->
       let lvl = nb_rel env in
-      let name,dom,codom = 
+      let name,dom,codom =
 	try decompose_prod env typ
 	with DestKO ->
           Errors.anomaly
@@ -201,7 +201,7 @@ and nf_type env v =
 
 and nf_type_sort env v =
   match kind_of_value v with
-  | Vaccu accu -> 
+  | Vaccu accu ->
       let t,s = nf_accu_type env accu in
       let s = try destSort s with DestKO -> assert false in
       t, s
@@ -224,7 +224,7 @@ and nf_accu_type env accu =
     mkApp(a,Array.of_list args), t
 
 and nf_args env accu t =
-  let aux arg (t,l) = 
+  let aux arg (t,l) =
     let _,dom,codom =
       try decompose_prod env t with
 	DestKO ->
@@ -290,8 +290,8 @@ and nf_atom_type env atom =
       let (mib,mip) = Inductive.lookup_mind_specif env (fst ind) in
       let nparams = mib.mind_nparams in
       let params,realargs = Array.chop nparams allargs in
-      let pT = 
-	hnf_prod_applist env 
+      let pT =
+	hnf_prod_applist env
 	  (Inductiveops.type_of_inductive env ind) (Array.to_list params) in
       let pT = whd_betadeltaiota env pT in
       let dep, p = nf_predicate env ind mip params p pT in
@@ -301,16 +301,16 @@ and nf_atom_type env atom =
       let bsw = branch_of_switch (nb_rel env) ans bs in
       let mkbranch i v =
 	let decl,codom = btypes.(i) in
-	let env = 
-	  List.fold_right 
+	let env =
+	  List.fold_right
 	    (fun (name,t) env -> push_rel (name,None,t) env) decl env in
 	let b = nf_val env v codom in
-	compose_lam decl b 
-      in 
-      let branchs = Array.mapi mkbranch bsw in
+	compose_lam decl b
+      in
+      let branchs = Array.map (fun x -> Some x) (* fix -jls *) (Array.mapi mkbranch bsw) in
       let tcase = build_case_type dep p realargs a in
       let ci = ans.asw_ci in
-      mkCase(ci, p, a, branchs), tcase 
+      mkCase(ci, p, [||], a, branchs), tcase (* TODO: what is Acase? should add idx there? -jls *)
   | Afix(tt,ft,rp,s) ->
       let tt = Array.map (nf_type env) tt in
       let name = Array.map (fun _ -> (Name (id_of_string "Ffix"))) tt in
@@ -357,10 +357,10 @@ and  nf_predicate env ind mip params v pT =
 	  Errors.anomaly
 	    (Pp.strbrk "Returned a functional value in a type not recognized as a product type.")
       in
-      let dep,body = 
+      let dep,body =
 	nf_predicate (push_rel (name,None,dom) env) ind mip params vb codom in
       dep, mkLambda(name,dom,body)
-  | Vfun f, _ -> 
+  | Vfun f, _ ->
       let k = nb_rel env in
       let vb = f (mk_rel_accu k) in
       let name = Name (id_of_string "c") in
@@ -372,11 +372,11 @@ and  nf_predicate env ind mip params v pT =
       true, mkLambda(name,dom,body)
   | _, _ -> false, nf_type env v
 
-let native_norm env sigma c ty =  
+let native_norm env sigma c ty =
   if !Flags.no_native_compiler then
     error "Native_compute reduction has been disabled"
   else
-  let penv = Environ.pre_env env in 
+  let penv = Environ.pre_env env in
   (*
   Format.eprintf "Numbers of free variables (named): %i\n" (List.length vl1);
   Format.eprintf "Numbers of free variables (rel): %i\n" (List.length vl2);
@@ -396,4 +396,4 @@ let native_norm env sigma c ty =
         let time_info = Format.sprintf "Reification done in %.5f@." (t2 -. t1) in
         if !Flags.debug then Pp.msg_debug (Pp.str time_info);
         res
-    | _ -> anomaly (Pp.str "Compilation failure") 
+    | _ -> anomaly (Pp.str "Compilation failure")

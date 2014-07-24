@@ -150,7 +150,7 @@ let pattern_of_constr sigma t =
     | Const (sp,u)  -> PRef (ConstRef (constant_of_kn(canonical_con sp)))
     | Ind (sp,u)    -> PRef (canonical_gr (IndRef sp))
     | Construct (sp,u) -> PRef (canonical_gr (ConstructRef sp))
-    | Proj (p, c) ->  
+    | Proj (p, c) ->
         PProj (constant_of_kn(canonical_con p), pattern_of_constr c)
     | Evar (evk,ctxt as ev) ->
         (match snd (Evd.evar_source evk sigma) with
@@ -159,18 +159,19 @@ let pattern_of_constr sigma t =
               assert (not b); PMeta (Some id)
           | Evar_kinds.GoalEvar -> PEvar (evk,Array.map pattern_of_constr ctxt)
           | _ -> PMeta None)
-    | Case (ci,p,a,br) ->
+    | Case (ci,p,_,a,br) -> (* TODO: process indices -jls *)
         let cip =
 	  { cip_style = ci.ci_pp_info.style;
 	    cip_ind = Some ci.ci_ind;
 	    cip_ind_args = Some (ci.ci_pp_info.ind_nargs);
 	    cip_extensible = false }
 	in
-	let branch_of_constr i c =
-	  (i, ci.ci_cstr_ndecls.(i), pattern_of_constr c)
+	let branch_of_constr i c = match c with
+        | Some c -> Some (i, ci.ci_cstr_ndecls.(i), pattern_of_constr c)
+        | None -> None
 	in
 	PCase (cip, pattern_of_constr p, pattern_of_constr a,
-	       Array.to_list (Array.mapi branch_of_constr br))
+               List.map Option.get (List.filter Option.has_some (Array.to_list (Array.mapi branch_of_constr br)))) (* removing impossible branches -jls *)
     | Fix f -> PFix f
     | CoFix f -> PCoFix f in
   let p = pattern_of_constr t in
@@ -197,7 +198,7 @@ let map_pattern_with_binders g f l = function
 
 let error_instantiate_pattern id l =
   let is = match l with
-  | [_] -> "is" 
+  | [_] -> "is"
   | _ -> "are"
   in
   errorlabstrm "" (str "Cannot substitute the term bound to " ++ pr_id id
@@ -245,7 +246,7 @@ let rec subst_pattern subst pat =
   | PVar _
   | PEvar _
   | PRel _ -> pat
-  | PProj (p,c) -> 
+  | PProj (p,c) ->
       let p',t = subst_global subst (ConstRef p) in
       let p' = destConstRef p' in
       let c' = subst_pattern subst c in
@@ -363,7 +364,8 @@ let rec pat_of_raw metas vars = function
       in
       PCase (cip, PMeta None, pat_of_raw metas vars b,
              [0,1,pat_of_raw metas vars c])
-  | GCases (loc,sty,p,[c,(na,indnames)],brs) ->
+  | GCases (loc,sty,p,[c,(na,indnames,None)],brs) ->
+    (* TODO: check if we need to consider other cases here -jls *)
       let get_ind = function
 	| (_,_,[PatCstr(_,(ind,_),_,_)],_)::_ -> Some ind
 	| _ -> None

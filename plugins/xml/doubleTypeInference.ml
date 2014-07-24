@@ -107,19 +107,20 @@ let double_type_of env sigma cstr expectedty subterms_to_types =
      | T.Construct cstruct ->
         E.make_judge cstr (Inductiveops.type_of_constructor env cstruct)
 
-     | T.Case (ci,p,c,lf) ->
+     | T.Case (ci,p,_,c,lf) ->
+        (* TODO: ignoring indices for now. -jls *)
         let expectedtype =
          Reduction.whd_betadeltaiota env (Retyping.get_type_of env sigma c) in
         let cj = execute env sigma c (Some expectedtype) in
         let pj = execute env sigma p None in
         let (expectedtypes,_) =
          let indspec = Inductive.find_rectype env cj.Environ.uj_type in
-          Inductive.type_case_branches env indspec pj cj.Environ.uj_val
+          Inductive.type_case_branches env indspec pj [||] cj.Environ.uj_val
         in
         let lfj =
-         execute_array env sigma lf
+         execute_array_opt env sigma lf
           (Array.map (function x -> Some x) expectedtypes) in
-          Typeops.judge_of_case env ci pj cj lfj 
+          Typeops.judge_of_case env ci pj [||] cj lfj
 
      | T.Fix ((vn,i as vni),recdef) ->
         let (_,tys,_ as recdef') = execute_recdef env sigma recdef in
@@ -255,6 +256,14 @@ if Acic.CicHash.mem subterms_to_types cstr then
  and execute_array env sigma v expectedtypes =
    let jl =
     execute_list env sigma (Array.to_list v) (Array.to_list expectedtypes)
+   in
+    Array.of_list jl
+
+ and execute_array_opt env sigma v expectedtypes =
+   let jl =
+    List.map2 (fun x y -> match x with
+    | Some x -> Some (execute env sigma x y)
+    | None -> None) (Array.to_list v) (Array.to_list expectedtypes)
    in
     Array.of_list jl
 

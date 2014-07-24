@@ -60,7 +60,7 @@ let abstract_scheme env evd c l lname_typ =
 (* [occur_meta ta] test removed for support of eelim/ecase but consequences
    are unclear...
        if occur_meta ta then error "cannot find a type for the generalisation"
-       else *) 
+       else *)
        if occur_meta a then mkLambda_name env (na,ta,t), evd
        else
 	 let t', evd' = Find_subterm.subst_closed_term_occ evd locc a t in
@@ -97,7 +97,7 @@ let abstract_list_all_with_dependencies env evd typ c l =
   if b then
     let p = nf_evar evd (existential_value evd (destEvar ev)) in
       evd, p
-  else error_cannot_find_well_typed_abstraction env evd 
+  else error_cannot_find_well_typed_abstraction env evd
     (nf_evar evd c) l None
 
 (**)
@@ -273,7 +273,7 @@ type unify_flags = {
 
 (* Default flag for unifying a type against a type (e.g. apply) *)
 (* We set all conversion flags (no flag should be modified anymore) *)
-let default_unify_flags () = 
+let default_unify_flags () =
   let ts = Names.full_transparent_state in
   { modulo_conv_on_closed_terms = Some ts;
   use_metas_eagerly_in_conv_on_closed_terms = true;
@@ -333,11 +333,11 @@ let use_evars_pattern_unification flags =
 
 let use_metas_pattern_unification flags nb l =
   !global_evars_pattern_unification_flag && flags.use_pattern_unification
-  || (Flags.version_less_or_equal Flags.V8_3 || 
+  || (Flags.version_less_or_equal Flags.V8_3 ||
       flags.use_meta_bound_pattern_unification) &&
      Array.for_all (fun c -> isRel c && destRel c <= nb) l
 
-type key = 
+type key =
   | IsKey of Closure.table_key
   | IsProj of constant * constr
 
@@ -348,15 +348,15 @@ let expand_table_key env = function
 
 let unfold_projection env p stk =
   (match try Some (lookup_projection p env) with Not_found -> None with
-  | Some pb -> 
+  | Some pb ->
     let s = Stack.Proj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, p) in
       s :: stk
   | None -> assert false)
 
 let expand_key ts env sigma = function
   | Some (IsKey k) -> expand_table_key env k
-  | Some (IsProj (p, c)) -> 
-    let red = Stack.zip (fst (whd_betaiota_deltazeta_for_iota_state ts env sigma 
+  | Some (IsProj (p, c)) ->
+    let red = Stack.zip (fst (whd_betaiota_deltazeta_for_iota_state ts env sigma
 			  Cst_stack.empty (c, unfold_projection env p [])))
     in if eq_constr (mkProj (p, c)) red then None else Some red
   | None -> None
@@ -374,7 +374,7 @@ let key_of env b flags f =
   | Proj (p, c) when Cpred.mem p (snd flags.modulo_delta) ->
     Some (IsProj (p, c))
   | _ -> None
-  
+
 
 let translate_key = function
   | ConstKey (cst,u) -> ConstKey cst
@@ -382,9 +382,9 @@ let translate_key = function
   | RelKey n -> RelKey n
 
 let translate_key = function
-  | IsKey k -> translate_key k    
+  | IsKey k -> translate_key k
   | IsProj (c, _) -> ConstKey c
-  
+
 let oracle_order env cf1 cf2 =
   match cf1 with
   | None ->
@@ -405,28 +405,28 @@ let is_rigid_head flags t =
   | Fix _ | CoFix _ -> true
   | _ -> false
 
-let force_eqs c = 
+let force_eqs c =
   Universes.Constraints.fold
-    (fun ((l,d,r) as c) acc -> 
+    (fun ((l,d,r) as c) acc ->
       let c' = if d == Universes.ULub then (l,Universes.UEq,r) else c in
-	Universes.Constraints.add c' acc) 
+	Universes.Constraints.add c' acc)
     c Universes.Constraints.empty
 
 let constr_cmp pb sigma flags t u =
-  let b, cstrs = 
+  let b, cstrs =
     if pb == Reduction.CONV then Universes.eq_constr_universes t u
     else Universes.leq_constr_universes t u
-  in 
-    if b then 
+  in
+    if b then
       try Evd.add_universe_constraints sigma cstrs, b
       with Univ.UniverseInconsistency _ -> sigma, false
-      | Evd.UniversesDiffer -> 
-	if is_rigid_head flags t then 
+      | Evd.UniversesDiffer ->
+	if is_rigid_head flags t then
 	  try Evd.add_universe_constraints sigma (force_eqs cstrs), b
 	  with Univ.UniverseInconsistency _ -> sigma, false
 	else sigma, false
     else sigma, b
-    
+
 let do_reduce ts (env, nb) sigma c =
   Stack.zip (fst (whd_betaiota_deltazeta_for_iota_state ts env sigma Cst_stack.empty (c, Stack.empty)))
 
@@ -458,7 +458,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	| Meta k1, Meta k2 ->
             if Int.equal k1 k2 then substn else
 	    let stM,stN = extract_instance_status pb in
-            let sigma = 
+            let sigma =
 	      if wt && flags.check_applied_meta_types then
 		let tyM = Typing.meta_type sigma k1 in
 		let tyN = Typing.meta_type sigma k2 in
@@ -470,7 +470,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	    else sigma,(k2,cM,stM)::metasubst,evarsubst
 	| Meta k, _
             when not (dependent cM cN) (* helps early trying alternatives *) ->
-            let sigma = 
+            let sigma =
 	      if wt && flags.check_applied_meta_types then
 		(try
                    let tyM = Typing.meta_type sigma k in
@@ -490,7 +490,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	    else error_cannot_unify_local curenv sigma (m,n,cN)
 	| _, Meta k
             when not (dependent cN cM) (* helps early trying alternatives *) ->
-          let sigma = 
+          let sigma =
 	    if wt && flags.check_applied_meta_types then
               (try
                  let tyM = get_type_of curenv ~lax:true sigma cM in
@@ -521,11 +521,11 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 		sigma,metasubst,((curenv,ev,cM)::evarsubst)
 	      else error_cannot_unify_local curenv sigma (m,n,cN)
 	| Sort s1, Sort s2 ->
-	    (try 
-	       let sigma' = 
+	    (try
+	       let sigma' =
 		 if pb == CUMUL
-		 then Evd.set_leq_sort sigma s1 s2 
-		 else Evd.set_eq_sort sigma s1 s2 
+		 then Evd.set_leq_sort sigma s1 s2
+		 else Evd.set_eq_sort sigma s1 s2
 	       in (sigma', metasubst, evarsubst)
 	     with e when Errors.noncritical e ->
                error_cannot_unify curenv sigma (m,n))
@@ -549,16 +549,20 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 
 	(* TODO: eta for records *)
 
-	| Case (_,p1,c1,cl1), Case (_,p2,c2,cl2) ->
-            (try 
-	       Array.fold_left2 (unirec_rec curenvnb CONV true wt)
+	| Case (_,p1,_,c1,cl1), Case (_,p2,_,c2,cl2) -> (* TODO: unify indices -jls *)
+          let uni_opt x y1 y2 = match y1, y2 with
+          | Some y1, Some y2 -> unirec_rec curenvnb CONV true wt x y1 y2
+          | None, None -> x
+          | _, _ -> anomaly (Pp.str "unification error?") in
+            (try
+	       Array.fold_left2 uni_opt (* (unirec_rec curenvnb CONV true wt) *)
 		 (unirec_rec curenvnb CONV true false
 		    (unirec_rec curenvnb CONV true false substn p1 p2) c1 c2)
                  cl1 cl2
 	     with ex when precatchable_exception ex ->
 	       reduce curenvnb pb b wt substn cM cN)
 
-	| App (f1,l1), _ when 
+	| App (f1,l1), _ when
 	    (isMeta f1 && use_metas_pattern_unification flags nb l1
             || use_evars_pattern_unification flags && isAllowedEvar flags f1) ->
             (match
@@ -589,8 +593,8 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 
 	| Proj (p1,c1), Proj (p2,c2) ->
 	    if eq_constant p1 p2 then
-	      try 
-	        let c1, c2, substn = 
+	      try
+	        let c1, c2, substn =
 		   if isCast c1 && isCast c2 then
 		     let (c1,_,tc1) = destCast c1 in
 		     let (c2,_,tc2) = destCast c2 in
@@ -643,7 +647,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	      unirec_rec curenvnb pb b wt substn cM cN'
 	    else error_cannot_unify (fst curenvnb) sigma (cM,cN)
     else error_cannot_unify (fst curenvnb) sigma (cM,cN)
-	    
+
   and expand (curenv,_ as curenvnb) pb b wt (sigma,metasubst,evarsubst as substn) cM f1 l1 cN f2 l2 =
     let res =
       (* Try full conversion on meta-free terms. *)
@@ -658,7 +662,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	 (it is used by apply and rewrite); it might now be redundant
 	 with the support for delta-expansion (which is used
 	 essentially for apply)... *)
-      if subterm_restriction b flags then None else 
+      if subterm_restriction b flags then None else
       match flags.modulo_conv_on_closed_terms with
       | None -> None
       | Some convflags ->
@@ -672,7 +676,7 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
           (* No subterm restriction there, too much incompatibilities *)
 	  let sigma, b = infer_conv ~pb ~ts:convflags env sigma m1 n1 in
 	    if b then Some (sigma, metasubst, evarsubst)
-	    else 
+	    else
 	      if is_ground_term sigma m1 && is_ground_term sigma n1 then
 		error_cannot_unify curenv sigma (cM,cN)
 	      else None
@@ -765,11 +769,11 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
 	error_cannot_unify (fst curenvnb) sigma (cM,cN)
     else error_cannot_unify (fst curenvnb) sigma (cM,cN)
   in
-    
-  let res = 
+
+  let res =
     if occur_meta_or_undefined_evar sigma m || occur_meta_or_undefined_evar sigma n
       || subterm_restriction conv_at_top flags then None
-    else 
+    else
       let sigma, b = match flags.modulo_conv_on_closed_terms with
 	| Some convflags -> infer_conv ~pb:cv_pb ~ts:convflags env sigma m n
 	| _ -> constr_cmp cv_pb sigma flags m n in
@@ -780,8 +784,8 @@ let unify_0_with_initial_metas (sigma,ms,es as subst) conv_at_top env cv_pb flag
         | None,(dl_id, dl_k) ->
           Id.Pred.is_empty dl_id && Cpred.is_empty dl_k)
 	then error_cannot_unify env sigma (m, n) else None
-  in 
-    match res with 
+  in
+    match res with
     | Some sigma -> sigma, ms, es
     | None -> unirec_rec (env,0) cv_pb conv_at_top false subst m n
 
@@ -811,14 +815,14 @@ let rec unify_with_eta keptside flags env sigma c1 c2 =
       (mkApp (lift 1 c1,[|mkRel 1|])) c2'
   | _ ->
     (keptside,unify_0 env sigma CONV flags c1 c2)
-    
+
 (* We solved problems [?n =_pb u] (i.e. [u =_(opp pb) ?n]) and [?n =_pb' u'],
    we now compute the problem on [u =? u'] and decide which of u or u' is kept
 
    Rem: the upper constraint is lost in case u <= ?n <= u' (and symmetrically
    in the case u' <= ?n <= u)
  *)
-    
+
 let merge_instances env sigma flags st1 st2 c1 c2 =
   match (opp_status st1, st2) with
   | (Conv, Conv) ->
@@ -845,7 +849,7 @@ let merge_instances env sigma flags st1 st2 c1 c2 =
     (try (left, IsSuperType, unify_0 env sigma CUMUL flags c1 c2)
      with e when Errors.noncritical e ->
        (right, IsSuperType, unify_0 env sigma CUMUL flags c2 c1))
-    
+
 (* Unification
  *
  * Procedure:
@@ -908,7 +912,7 @@ let applyHead env evd n c  =
       | _ -> error "Apply_Head_Then"
   in
     apprec n c (Typing.type_of env evd c) evd
-    
+
 let is_mimick_head ts f =
   match kind_of_term f with
   | Const (c,u) -> not (Closure.is_transparent_constant ts c)
@@ -932,7 +936,7 @@ let w_coerce_to_type env evd c cty mvty =
        fst (nat,nat)) and stops while it could have seen that it is rigid *)
     let cty = Tacred.hnf_constr env evd cty in
       try_to_coerce env evd c cty tycon
-	  
+
 let w_coerce env evd mv c =
   let cty = get_type_of env evd c in
   let mvty = Typing.meta_type evd mv in
@@ -947,7 +951,7 @@ let unify_to_type env sigma flags c status u =
 let unify_type env sigma flags mv status c =
   let mvty = Typing.meta_type sigma mv in
   let mvty = nf_meta sigma mvty in
-    unify_to_type env sigma 
+    unify_to_type env sigma
       {flags with modulo_delta = flags.modulo_delta_types;
 	 modulo_conv_on_closed_terms = Some flags.modulo_delta_types;
 	 modulo_betaiota = true}
@@ -1025,7 +1029,7 @@ let w_merge env with_types flags (evd,metas,evars) =
 	      ((evd,c),([],[])),(mv,status,c)::eqns
 	    end
 	  else
-	    ((evd,c),([],[])),eqns 
+	    ((evd,c),([],[])),eqns
 	in
 	  if meta_defined evd mv then
 	    let {rebus=c'},(status',_) = meta_fvalue evd mv in
@@ -1051,16 +1055,16 @@ let w_merge env with_types flags (evd,metas,evars) =
 	  | (mv,status,c)::eqns ->
               (match (try Inl (unify_type env evd flags mv status c)
 		      with e when Errors.noncritical e -> Inr e)
-	       with 
+	       with
 	       | Inr e -> process_eqns (((mv,status,c),e)::failures) eqns
 	       | Inl (evd,metas,evars) ->
 		   w_merge_rec evd metas evars (List.map fst failures @ eqns))
-	  | [] -> 
+	  | [] ->
 	      (match failures with
 	       | [] -> evd
 	       | ((mv,status,c),e)::_ -> raise e)
 	in process_eqns [] eqns
-	      
+
   and mimick_undefined_evar evd flags hdc nargs sp =
     let ev = Evd.find_undefined evd sp in
     let sp_env = Global.env_of_context ev.evar_hyps in
@@ -1073,7 +1077,7 @@ let w_merge env with_types flags (evd,metas,evars) =
     then Evd.define sp c evd'''
     else Evd.define sp (Evarutil.nf_evar evd''' c) evd''' in
 
-  let check_types evd = 
+  let check_types evd =
     let metas = Evd.meta_list evd in
     let eqns = List.fold_left (fun acc (mv, b) ->
       match b with
@@ -1157,6 +1161,18 @@ let iter_fail f a =
     else
       try f a.(i)
       with ex when precatchable_exception ex -> ffail (i+1)
+  in ffail 0
+
+let iter_fail_opt f a =
+  let n = Array.length a in
+  let rec ffail i =
+    if Int.equal i n then error "iter_fail"
+    else
+      match a.(i) with
+      | Some a ->
+        ( try f a
+          with ex when precatchable_exception ex -> ffail (i+1) )
+      | None -> ffail (i+1) (* is this ok? -jls *)
   in ffail 0
 
 (* make_abstraction: a variant of w_unify_to_subterm which works on
@@ -1352,11 +1368,11 @@ let w_unify_to_subterm env evd ?(flags=default_unify_flags ()) (op,cl) =
 		 matchrec c1
 	       with ex when precatchable_exception ex ->
 		 matchrec c2)
-          | Case(_,_,c,lf) -> (* does not search in the predicate *)
+          | Case(_,_,_,c,lf) -> (* does not search in the predicate *) (* TODO: do we care about indices here? -jls *)
 	       (try
 		 matchrec c
 	       with ex when precatchable_exception ex ->
-		 iter_fail matchrec lf)
+                 iter_fail_opt matchrec lf)
 	  | LetIn(_,c1,_,c2) ->
 	       (try
 		 matchrec c1
@@ -1417,6 +1433,15 @@ let w_unify_to_subterm_all env evd ?(flags=default_unify_flags ()) (op,cl) =
       else bind (f a.(i)) (ffail (i+1))
     in ffail 0
   in
+  let bind_iter_opt f a = (* bind only available branches. Check -jls *)
+    let n = Array.length a in
+    let rec ffail i =
+      if Int.equal i n then fun a -> a
+      else match a.(i) with
+      | Some a -> bind (f a) (ffail (i+1))
+      | None -> ffail (i+1)
+    in ffail 0
+  in
   let rec matchrec cl =
     let cl = strip_outer_cast cl in
       (bind
@@ -1431,8 +1456,8 @@ let w_unify_to_subterm_all env evd ?(flags=default_unify_flags ()) (op,cl) =
 		let c2 = args.(n-1) in
 		bind (matchrec c1) (matchrec c2)
 
-            | Case(_,_,c,lf) -> (* does not search in the predicate *)
-		bind (matchrec c) (bind_iter matchrec lf)
+            | Case(_,_,_,c,lf) -> (* does not search in the predicate *) (* do we care about indices here? -jls *)
+		bind (matchrec c) (bind_iter_opt matchrec lf)
 
 	    | Proj (p,c) -> matchrec c
 
@@ -1479,7 +1504,7 @@ let w_unify_to_subterm_list env evd flags hdmeta oplist t =
 	    List.exists (fun op -> eq_constr op cl) l
 	  then error_non_linear_unification env evd hdmeta cl
 	  else (evd',cl::l)
-      else if flags.allow_K_in_toplevel_higher_order_unification 
+      else if flags.allow_K_in_toplevel_higher_order_unification
 	  || dependent_univs op t
       then
 	(evd,op::l)
@@ -1589,7 +1614,7 @@ let w_unify env evd cv_pb ?(flags=default_unify_flags ()) ty1 ty2 =
 let w_unify env evd cv_pb flags ty1 ty2 =
   w_unify env evd cv_pb ~flags:flags ty1 ty2
 
-let w_unify = 
+let w_unify =
   if Flags.profile then
     let wunifkey = Profile.declare_profile "w_unify" in
       Profile.profile6 wunifkey w_unify

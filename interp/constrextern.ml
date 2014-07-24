@@ -589,7 +589,7 @@ let extern_glob_sort = function
 let extern_universes = function
   | Some _ as l when !print_universes -> l
   | _ -> None
-  
+
 let rec extern inctx scopes vars r =
   let r' = remove_coercions inctx r in
   try
@@ -670,14 +670,14 @@ let rec extern inctx scopes vars r =
 	   let ref = ConstRef p in
 	   let subscopes = find_arguments_scope ref in
 	   let args =
-	     extern_args (extern true) (snd scopes) vars (c :: args) subscopes 
+	     extern_args (extern true) (snd scopes) vars (c :: args) subscopes
 	   in
-	     extern_app loc inctx 
+	     extern_app loc inctx
 	     (projection_implicits (Global.env ()) p
 	      (select_stronger_impargs (implicits_of_global ref)))
 	       (Some ref, extern_reference loc vars ref)
 	       None args
-	       
+
 	 | _       ->
 	   explicitize loc inctx [] (None,sub_extern false scopes vars f)
              (List.map (sub_extern true scopes vars) args))
@@ -704,7 +704,7 @@ let rec extern inctx scopes vars r =
       List.fold_right (name_fold Id.Set.add)
 	(cases_predicate_names tml) vars in
     let rtntypopt' = Option.map (extern_typ scopes vars') rtntypopt in
-    let tml = List.map (fun (tm,(na,x)) ->
+    let tml = List.map (fun (tm,(na,x,idxs)) -> (* TODO: check indices -jls *)
       let na' = match na,tm with
         | Anonymous, GVar (_, id) ->
             begin match rtntypopt with
@@ -724,7 +724,10 @@ let rec extern inctx scopes vars r =
 	   if !in_debugger then args else
 	     Notation_ops.add_patterns_for_params ind args in
 	 extern_ind_pattern_in_scope scopes vars ind fullargs
-	) x))) tml in
+	) x,
+        Option.map (List.map (fun (id,d) ->
+          (Loc.ghost, id), sub_extern false scopes vars d
+        )) idxs ))) tml in
     let eqns = List.map (extern_eqn inctx scopes vars) eqns in
     CCases (loc,sty,rtntypopt',tml,eqns)
 
@@ -1002,7 +1005,8 @@ let rec glob_of_pat env = function
       let mat = if info.cip_extensible then mat @ [any_any_branch] else mat
       in
       let indnames,rtn = match p, info.cip_ind, info.cip_ind_args with
-	| PMeta None, _, _ -> (Anonymous,None),None
+	| PMeta None, _, _ -> (Anonymous,None,None),None
+          (* TOOD: check indices -jls *)
 	| _, Some ind, Some nargs ->
 	  return_type_of_predicate ind nargs (glob_of_pat env p)
 	| _ -> anomaly (Pp.str "PCase with non-trivial predicate but unknown inductive")

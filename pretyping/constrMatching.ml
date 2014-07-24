@@ -139,15 +139,15 @@ let merge_binding allow_bound_rels stk n cT subst =
   constrain n c subst
 
 let matches_core convert allow_partial_app allow_bound_rels pat c =
-  let convref ref c = 
+  let convref ref c =
     match ref, kind_of_term c with
     | VarRef id, Var id' -> Names.id_eq id id'
     | ConstRef c, Const (c',_) -> Names.eq_constant c c'
     | IndRef i, Ind (i', _) -> Names.eq_ind i i'
     | ConstructRef c, Construct (c',u) -> Names.eq_constructor c c'
-    | _, _ -> (match convert with 
+    | _, _ -> (match convert with
                | None -> false
-	       | Some (env,sigma) -> 
+	       | Some (env,sigma) ->
 	         let sigma,c' = Evd.fresh_global env sigma ref in
 		   is_conv env sigma c' c)
   in
@@ -210,7 +210,7 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
 	| _ ->
           (try Array.fold_left2 (sorec stk) (sorec stk subst c1 c2) arg1 arg2
            with Invalid_argument _ -> raise PatternMatchingFailure))
-	  
+
       | PProj (p1,c1), Proj (p2,c2) when eq_constant p1 p2 ->
           sorec stk subst c1 c2
 
@@ -226,9 +226,9 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
 	  sorec ((na1,na2,t2)::stk)
             (add_binders na1 na2 (sorec stk subst c1 c2)) d1 d2
 
-      | PIf (a1,b1,b1'), Case (ci,_,a2,[|b2;b2'|]) ->
-	  let ctx,b2 = decompose_lam_n_assum ci.ci_cstr_ndecls.(0) b2 in
-	  let ctx',b2' = decompose_lam_n_assum ci.ci_cstr_ndecls.(1) b2' in
+      | PIf (a1,b1,b1'), Case (ci,_,_,a2,[|b2;b2'|]) -> (* TODO: do we care about indices here? -jls *)
+	  let ctx,b2 = decompose_lam_n_assum ci.ci_cstr_ndecls.(0) (Option.get b2) (* unsafe -jls *) in
+	  let ctx',b2' = decompose_lam_n_assum ci.ci_cstr_ndecls.(1) (Option.get b2') (* unsafe -jls *) in
 	  let n = rel_context_length ctx in
           let n' = rel_context_length ctx' in
 	  if noccur_between 1 n b2 && noccur_between 1 n' b2' then
@@ -241,7 +241,8 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
           else
             raise PatternMatchingFailure
 
-      | PCase (ci1,p1,a1,br1), Case (ci2,p2,a2,br2) ->
+      | PCase (ci1,p1,a1,br1), Case (ci2,p2,_,a2,br2) -> (* TODO: process indices. Should we add them to PCase? -jls *)
+          (* Filter out impossible branches -jls *)
 	  let n2 = Array.length br2 in
           let () = match ci1.cip_ind with
           | None -> ()
@@ -258,7 +259,7 @@ let matches_core convert allow_partial_app allow_bound_rels pat c =
 	    (* (ind,j+1) is normally known to be a correct constructor
 	       and br2 a correct match over the same inductive *)
 	    assert (j < n2);
-	    sorec stk subst c br2.(j)
+	    sorec stk subst c (Option.get br2.(j)) (* this may be safe -jls *)
 	  in
 	  let chk_head = sorec stk (sorec stk subst a1 a2) p1 p2 in
 	  List.fold_left chk_branch chk_head br1
@@ -361,12 +362,14 @@ let sub_match ?(partial_app=false) ?(closed=true) pat c =
           try_aux (c1::Array.to_list lc) mk_ctx next
       in
       authorized_occ partial_app closed pat c mk_ctx next
-  | Case (ci,hd,c1,lc) ->
+  | Case (ci,hd,_,c1,lc) -> (* TODO: no idea probably wrong -jls *)
       let next_mk_ctx = function
       | [] -> assert false
-      | c1 :: lc -> mk_ctx (mkCase (ci,hd,c1,Array.of_list lc))
+      | c1 :: lc ->
+          mk_ctx (mkCase (ci,hd,[||] (* TODO: ? -jls *),c1,Array.of_list (List.map (fun x -> Some x) lc)))
       in
-      let next () = try_aux (c1 :: Array.to_list lc) next_mk_ctx next in
+      let lc = List.map Option.get (List.filter Option.has_some (Array.to_list lc)) in
+      let next () = try_aux (c1 :: lc) next_mk_ctx next in
       authorized_occ partial_app closed pat c mk_ctx next
   | Fix (indx,(names,types,bodies)) ->
     let nb_fix = Array.length types in

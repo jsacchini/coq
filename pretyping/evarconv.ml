@@ -35,8 +35,8 @@ let _ = Goptions.declare_bool_option {
 
 let unfold_projection env p c stk =
   (match try Some (lookup_projection p env) with Not_found -> None with
-  | Some pb -> 
-    let unfold () = 
+  | Some pb ->
+    let unfold () =
       let s = Stack.Proj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, p) in
 	Some (c, s :: stk)
     in
@@ -64,7 +64,7 @@ let eval_flexible_term ts env c stk =
        with Not_found -> None)
   | LetIn (_,b,_,c) -> Some (subst1 b c, stk)
   | Lambda _ -> Some (c, stk)
-  | Proj (p, c) -> 
+  | Proj (p, c) ->
     if is_transparent_constant ts p
     then unfold_projection env p c stk
     else None
@@ -132,7 +132,7 @@ let check_conv_record (t1,sk1) (t2,sk2) =
 	let c2 = global_of_constr t2 in
 	  lookup_canonical_conversion (proji, Const_cs c2),sk2
     with Not_found ->
-      let (c, cs) = lookup_canonical_conversion (proji,Default_cs) in 
+      let (c, cs) = lookup_canonical_conversion (proji,Default_cs) in
 	(c,cs),[]
   in
   let t', { o_DEF = c; o_CTX = ctx; o_INJ=n; o_TABS = bs;
@@ -205,6 +205,24 @@ let ise_array2 evd f v1 v2 =
   if Int.equal lv1 (Array.length v2) then allrec evd (pred lv1)
   else UnifFailure (evd,NotSameArgSize)
 
+let ise_array2_opt evd f v1 v2 =
+  let rec allrec i = function
+    | -1 -> Success i
+    | n ->
+      begin match v1.(n), v2.(n) with
+      | Some v1, Some v2 ->
+        begin match f i v1 v2 with
+	| Success i' -> allrec i' (n-1)
+	| UnifFailure _ as x -> x
+        end
+      | None, None -> allrec i (n-1) (* check i -jls *)
+      | _, _ -> UnifFailure (evd,NotSameHead)
+      end
+  in
+  let lv1 = Array.length v1 in
+  if Int.equal lv1 (Array.length v2) then allrec evd (pred lv1)
+  else UnifFailure (evd,NotSameArgSize)
+
 (* Applicative node of stack are read from the outermost to the innermost
    but are unified the other way. *)
 let rec ise_app_stack2 env f evd sk1 sk2 =
@@ -231,7 +249,7 @@ let ise_stack2 no_app env evd f sk1 sk2 =
     | Stack.Case (_,t1,c1,_)::q1, Stack.Case (_,t2,c2,_)::q2 ->
       (match f env i CONV t1 t2 with
       | Success i' ->
-	(match ise_array2 i' (fun ii -> f env ii CONV) c1 c2 with
+	(match ise_array2_opt i' (fun ii -> f env ii CONV) c1 c2 with
 	| Success i'' -> ise_stack2 true i'' q1 q2
         | UnifFailure _ as x -> fail x)
       | UnifFailure _ as x -> fail x)
@@ -267,7 +285,7 @@ let exact_ise_stack2 env evd f sk1 sk2 =
     | Stack.Case (_,t1,c1,_)::q1, Stack.Case (_,t2,c2,_)::q2 ->
       ise_and i [
       (fun i -> ise_stack2 i q1 q2);
-      (fun i -> ise_array2 i (fun ii -> f env ii CONV) c1 c2);
+      (fun i -> ise_array2_opt i (fun ii -> f env ii CONV) c1 c2);
       (fun i -> f env i CONV t1 t2)]
     | Stack.Fix (((li1, i1),(_,tys1,bds1 as recdef1)),a1,_)::q1,
       Stack.Fix (((li2, i2),(_,tys2,bds2)),a2,_)::q2 ->
@@ -293,7 +311,7 @@ let exact_ise_stack2 env evd f sk1 sk2 =
   if Reductionops.Stack.compare_shape sk1 sk2 then
     ise_stack2 evd (List.rev sk1) (List.rev sk2)
   else UnifFailure (evd, (* Dummy *) NotSameHead)
-    
+
 let rec evar_conv_x ts env evd pbty term1 term2 =
   let term1 = whd_head_evar evd term1 in
   let term2 = whd_head_evar evd term2 in
@@ -302,8 +320,8 @@ let rec evar_conv_x ts env evd pbty term1 term2 =
      Note: incomplete heuristic... *)
   let ground_test =
     if is_ground_term evd term1 && is_ground_term evd term2 then (
-      let evd, b = 
-	try infer_conv ~pb:pbty ~ts env evd term1 term2 
+      let evd, b =
+	try infer_conv ~pb:pbty ~ts env evd term1 term2
 	with Univ.UniverseInconsistency _ -> evd, false
       in
 	if b then Some (evd, true)
@@ -441,10 +459,10 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	in
 	ise_try evd [f1; f2]
 
-    | Flexible ev1, MaybeFlexible (v2,sk2) -> 
+    | Flexible ev1, MaybeFlexible (v2,sk2) ->
       flex_maybeflex true ev1 (appr1,csts1) (appr2,csts2) (v2,sk2)
 
-    | MaybeFlexible (v1,sk1), Flexible ev2 -> 
+    | MaybeFlexible (v1,sk1), Flexible ev2 ->
       flex_maybeflex false ev2 (appr2,csts2) (appr1,csts1) (v1,sk1)
 
     | MaybeFlexible (v1,sk1), MaybeFlexible (v2,sk2) -> begin
@@ -466,8 +484,8 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	ise_try evd [f1; f2]
 
 	| Proj (p, c), Proj (p', c') when eq_constant p p' ->
-	  let f1 i = 
-	    ise_and i 
+	  let f1 i =
+	    ise_and i
 	    [(fun i -> evar_conv_x ts env i CONV c c');
 	     (fun i -> exact_ise_stack2 env i (evar_conv_x ts) sk1 sk2)]
 	  and f2 i =
@@ -478,7 +496,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	    ise_try evd [f1; f2]
 
 	| _, _ ->
-	let f1 i = 
+	let f1 i =
 	  (* Gather the universe constraints that would make term1 and term2 equal.
 	     If these only involve unifications of flexible universes to other universes,
 	     allow this identification (first-order unification of universes). Otherwise
@@ -486,7 +504,7 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
 	  *)
 	  let b,univs = Universes.eq_constr_universes term1 term2 in
 	    if b then
-	      ise_and i [(fun i -> 
+	      ise_and i [(fun i ->
 		try Success (Evd.add_universe_constraints i univs)
 		with UniversesDiffer -> UnifFailure (i,NotSameHead)
 		| Univ.UniverseInconsistency p -> UnifFailure (i, UnifUnivInconsistency p));
@@ -612,13 +630,13 @@ and evar_eqappr_x ?(rhs_is_already_stuck = false) ts env evd pbty
             else UnifFailure (evd,NotSameHead)
 
 	| Const _, Const _
-	| Ind _, Ind _ 
+	| Ind _, Ind _
 	| Construct _, Construct _ ->
 	  rigids env evd sk1 term1 sk2 term2
 
 	| Construct u, _ ->
 	  eta_constructor ts env evd sk1 u sk2 term2
-	    
+
 	| _, Construct u ->
 	  eta_constructor ts env evd sk2 u sk1 term1
 
@@ -666,7 +684,7 @@ and conv_record trs env evd (ctx,(h,h'),c,bs,(params,params1),(us,us2),(ts,ts1),
     let (evd',ks,_,test) =
       List.fold_left
 	(fun (i,ks,m,test) b ->
-	  if Int.equal m n then 
+	  if Int.equal m n then
 	    let ty = Retyping.get_type_of env i t2 in
 	    let test i = evar_conv_x trs env i CUMUL ty (substl ks b) in
 	      (i,t2::ks, m-1, test)
@@ -689,23 +707,23 @@ and conv_record trs env evd (ctx,(h,h'),c,bs,(params,params1),(us,us2),(ts,ts1),
        (fun i -> evar_conv_x trs env i CONV c1 app);
        (fun i -> exact_ise_stack2 env i (evar_conv_x trs) ts ts1);
        test;
-       (fun i -> evar_conv_x trs env i CONV h 
+       (fun i -> evar_conv_x trs env i CONV h
 	 (fst (decompose_app_vect (substl ks h'))))]
   else UnifFailure(evd,(*dummy*)NotSameHead)
 
 and eta_constructor ts env evd sk1 ((ind, i), u) sk2 term2 =
   let mib = lookup_mind (fst ind) env in
     match mib.Declarations.mind_record with
-    | Some (exp,projs) when Array.length projs > 0 -> 
+    | Some (exp,projs) when Array.length projs > 0 ->
       let pars = mib.Declarations.mind_nparams in
-	(try 
+	(try
 	   let l1' = Stack.tail pars sk1 in
 	     if Environ.is_projection projs.(0) env then
-	       let l2' = 
-		 let term = Stack.zip (term2,sk2) in 
+	       let l2' =
+		 let term = Stack.zip (term2,sk2) in
 		   List.map (fun p -> mkProj (p, term)) (Array.to_list projs)
 	       in
-		 exact_ise_stack2 env evd (evar_conv_x ts) l1' 
+		 exact_ise_stack2 env evd (evar_conv_x ts) l1'
 		   (Stack.append_app_list l2' Stack.empty)
 	     else raise (Failure "")
 	 with Failure _ -> UnifFailure(evd,NotSameHead))
@@ -881,12 +899,12 @@ let second_order_matching ts env_rhs evd (evk,args) argoccs rhs =
       in
       force_instantiation evd !evsref
   | [] ->
-    let evd = 
-      try Evarsolve.check_evar_instance evd evk rhs 
+    let evd =
+      try Evarsolve.check_evar_instance evd evk rhs
 	    (evar_conv_x full_transparent_state)
       with IllTypedInstance _ -> raise (TypingFailed evd)
     in
-      Evd.define evk rhs evd 
+      Evd.define evk rhs evd
   in
   abstract_free_holes evd subst, true
   with TypingFailed evd -> evd, false
@@ -1002,13 +1020,13 @@ let rec solve_unconstrained_evars_with_canditates ts evd =
 let solve_unconstrained_impossible_cases env evd =
   Evd.fold_undefined (fun evk ev_info evd' ->
     match ev_info.evar_source with
-    | _,Evar_kinds.ImpossibleCase -> 
+    | _,Evar_kinds.ImpossibleCase ->
       let j, ctx = coq_unit_judge () in
       let evd' = Evd.merge_context_set Evd.univ_flexible_alg evd' ctx in
       let ty = j_type j in
       let conv_algo = evar_conv_x full_transparent_state in
       let evd' = check_evar_instance evd' evk ty conv_algo in
-	Evd.define evk ty evd' 
+	Evd.define evk ty evd'
     | _ -> evd') evd evd
 
 let consider_remaining_unif_problems env
@@ -1028,9 +1046,9 @@ let consider_remaining_unif_problems env
         | UnifFailure (evd,reason) ->
 	    Pretype_errors.error_cannot_unify_loc (loc_of_conv_pb evd pb)
               env evd ~reason (t1, t2))
-    | _ -> 
+    | _ ->
 	if progress then aux evd stuck false []
-	else 
+	else
 	  match stuck with
 	  | [] -> (* We're finished *) evd
 	  | (pbty,env,t1,t2 as pb) :: _ ->

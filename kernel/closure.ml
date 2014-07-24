@@ -210,7 +210,7 @@ type table_key = constant puniverses tableKey
 
 let eq_pconstant_key (c,u) (c',u') =
   eq_constant_key c c' && Univ.Instance.equal u u'
-  
+
 module IdKeyHash =
 struct
   open Hashset.Combine
@@ -233,7 +233,7 @@ type 'a infos_cache = {
   i_rels : constr option array;
   i_tab : 'a KeyTable.t }
 
-and 'a infos = { 
+and 'a infos = {
   i_flags : reds;
   i_cache : 'a infos_cache }
 
@@ -289,7 +289,7 @@ let defined_rels flags env =
 (*  else (0,[])*)
 
 let create mk_cl flgs env evars =
-  let cache = 
+  let cache =
     { i_repr = mk_cl;
       i_env = env;
       i_sigma = evars;
@@ -341,7 +341,7 @@ and fterm =
   | FProj of constant * fconstr
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
-  | FCases of case_info * fconstr * fconstr * fconstr array
+  | FCases of case_info * fconstr * fconstr array * fconstr * fconstr option array
   | FLambda of int * (Name.t * constr) list * constr * fconstr subs
   | FProd of Name.t * fconstr * fconstr
   | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
@@ -370,7 +370,7 @@ let update v1 no t =
 
 type stack_member =
   | Zapp of fconstr array
-  | Zcase of case_info * fconstr * fconstr array
+  | Zcase of case_info * fconstr * fconstr option array
   | Zproj of int * int * constant
   | Zfix of fconstr * stack
   | Zshift of int
@@ -528,14 +528,22 @@ let rec compact_constr (lg, subs as s) c k =
         let (s, ty') = compact_vect s ty k in
         let (s, bd') = compact_vect s bd (k+Array.length ty) in
         if ty==ty' && bd==bd' then s, c else s, mkCoFix(i,(na,ty',bd'))
-    | Case(ci,p,a,br) ->
+    | Case(ci,p,i,a,br) ->
         let (s, p') = compact_constr s p k in
+        let (s, i') = compact_vect s i k in
         let (s, a') = compact_constr s a k in
-        let (s, br') = compact_vect s br k in
-        if p==p' && a==a' && br==br' then s, c else s, mkCase(ci,p',a',br')
+        let (s, br') = compact_vect_opt s br k in
+        if p==p' && i==i' && a==a' && br==br'
+        then s, c else s, mkCase(ci,p',i',a',br')
 
 and compact_vect s v k =
   let fold s c = compact_constr s c k in
+  Array.smartfoldmap fold s v
+
+and compact_vect_opt s v k =
+  let fold s c = match c with
+  | Some c -> let (s',c') = compact_constr s c k in (s', Some c')
+  | None -> (s, None) in
   Array.smartfoldmap fold s v
 
 (* Computes the minimal environment of a closure.
@@ -576,6 +584,9 @@ let mk_clos e t =
         {norm = Red; term = FCLOS(t,e)}
 
 let mk_clos_vect env v = CArray.Fun1.map mk_clos env v
+let mk_clos_vect_opt env v =
+  let mk_opt arg c = Option.map (mk_clos arg) c in
+    CArray.Fun1.map mk_opt env v
 
 (* Translate the head constructor of t from constr to fconstr. This
    function is parameterized by the function to apply on the direct
@@ -594,10 +605,14 @@ let mk_clos_deep clos_fun env t =
     | Proj (p,c) ->
 	{ norm = Red;
 	  term = FProj (p, clos_fun env c) }
-    | Case (ci,p,c,v) ->
+    | Case (ci,p,i,c,v) ->
+      let clos_fun_opt arg c = match c with
+      | Some c -> Some (clos_fun arg c)
+      | None -> None in
         { norm = Red;
-	  term = FCases (ci, clos_fun env p, clos_fun env c,
-			 CArray.Fun1.map clos_fun env v) }
+	  term = FCases (ci, clos_fun env p, CArray.Fun1.map clos_fun env i,
+                         clos_fun env c,
+			 CArray.Fun1.map clos_fun_opt env v) }
     | Fix fx ->
         { norm = Cstr; term = FFix (fx, env) }
     | CoFix cfx ->
@@ -628,10 +643,12 @@ let rec to_constr constr_fun lfts v =
     | FFlex (ConstKey op) -> mkConstU op
     | FInd op -> mkIndU op
     | FConstruct op -> mkConstructU op
-    | FCases (ci,p,c,ve) ->
+    | FCases (ci,p,i,c,ve) ->
+      let constr_fun_opt arg c = Option.map (constr_fun arg) c in
 	mkCase (ci, constr_fun lfts p,
+                CArray.Fun1.map constr_fun lfts i,
                 constr_fun lfts c,
-		CArray.Fun1.map constr_fun lfts ve)
+		CArray.Fun1.map constr_fun_opt lfts ve)
     | FFix ((op,(lna,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = CArray.Fun1.map mk_clos e tys in
@@ -705,9 +722,9 @@ let rec zip m stk rem = match stk with
   end
 | Zapp args :: s -> zip {norm=neutr m.norm; term=FApp(m, args)} s rem
 | Zcase(ci,p,br)::s ->
-  let t = FCases(ci, p, m, br) in
+  let t = FCases(ci, p, [||], m, br) in (* TODO: check indices -jls *)
   zip {norm=neutr m.norm; term=t} s rem
-| Zproj (i,j,cst) :: s -> 
+| Zproj (i,j,cst) :: s ->
   zip {norm=neutr m.norm; term=FProj (cst,m)} s rem
 | Zfix(fx,par)::s ->
   zip fx par ((Zapp [|m|] :: s) :: rem)
@@ -836,11 +853,11 @@ let rec get_parameters depth n argstk =
         if n > q then Array.append args (get_parameters depth (n-q) s)
         else if Int.equal n q then [||]
         else Array.sub args 0 n
-    | Zshift(k)::s -> 
+    | Zshift(k)::s ->
       get_parameters (depth-k) n s
     | [] -> (* we know that n < stack_args_size(argstk) (if well-typed term) *)
 	if Int.equal n 0 then [||]
-	else raise Not_found (* Trying to eta-expand a partial application..., should do 
+	else raise Not_found (* Trying to eta-expand a partial application..., should do
 				eta expansion first? *)
     | _ -> assert false
 	(* strip_update_shift_app only produces Zapp and Zshift items *)
@@ -849,7 +866,7 @@ let eta_expand_ind_stack env lft (ind,u) m s (lft, h) =
   let mib = lookup_mind (fst ind) env in
     match mib.Declarations.mind_record with
     | None -> raise Not_found
-    | Some (exp,_) -> 
+    | Some (exp,_) ->
       let pars = mib.Declarations.mind_nparams in
       let h' = fapp_stack h in
       let (depth, args, _) = strip_update_shift_app m s in
@@ -861,7 +878,7 @@ let eta_expand_ind_stack env lft (ind,u) m s (lft, h) =
 let eta_expand_ind_stacks env ind m s h =
   let mib = lookup_mind (fst ind) env in
     match mib.Declarations.mind_record with
-    | Some (exp,projs) when Array.length projs > 0 -> 
+    | Some (exp,projs) when Array.length projs > 0 ->
       let pars = mib.Declarations.mind_nparams in
       let h' = fapp_stack h in
       let (depth, args, _) = strip_update_shift_app m s in
@@ -879,7 +896,7 @@ let eta_expand_ind_stacks env ind m s h =
 
 let rec project_nth_arg n argstk =
   match argstk with
-  | Zapp args :: s -> 
+  | Zapp args :: s ->
       let q = Array.length args in
 	if n >= q then project_nth_arg (n - q) s
 	else (* n < q *) args.(n)
@@ -922,7 +939,8 @@ let rec knh info m stk =
     | FCLOS(t,e) -> knht info e t (zupdate m stk)
     | FLOCKED -> assert false
     | FApp(a,b) -> knh info a (append_stack b (zupdate m stk))
-    | FCases(ci,p,t,br) -> knh info t (Zcase(ci,p,br)::zupdate m stk)
+    | FCases(ci,p,_,t,br) -> knh info t (Zcase(ci,p,br)::zupdate m stk)
+      (* TODO: check indices -jls *)
     | FFix(((ri,n),(_,_,_)),_) ->
         (match get_nth_arg m ri.(n) stk with
              (Some(pars,arg),stk') -> knh info arg (Zfix(m,pars)::stk')
@@ -947,8 +965,8 @@ and knht info e t stk =
   match kind_of_term t with
     | App(a,b) ->
         knht info e a (append_stack (mk_clos_vect e b) stk)
-    | Case(ci,p,t,br) ->
-        knht info e t (Zcase(ci, mk_clos e p, mk_clos_vect e br)::stk)
+    | Case(ci,p,_,t,br) -> (* TODO: process indices -jls *)
+      knht info e t (Zcase(ci, mk_clos e p, mk_clos_vect_opt e br)::stk)
     | Fix _ -> knh info (mk_clos2 e t) stk
     | Cast(a,_,_) -> knht info e a stk
     | Rel n -> knh info (clos_rel e n) stk
@@ -984,7 +1002,10 @@ let rec knr info m stk =
           (depth, args, Zcase(ci,_,br)::s) ->
             assert (ci.ci_npar>=0);
             let rargs = drop_parameters depth ci.ci_npar args in
-            kni info br.(c-1) (rargs@s)
+              begin match br.(c-1) with
+              | Some b -> kni info b (rargs@s)
+              | None -> anomaly (Pp.str "Reducing a case over an impossible branch")
+              end
         | (_, cargs, Zfix(fx,par)::s) ->
             let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack [|rarg|] s in
@@ -1026,11 +1047,11 @@ let rec zip_term zfun m stk =
     | [] -> m
     | Zapp args :: s ->
         zip_term zfun (mkApp(m, Array.map zfun args)) s
-    | Zcase(ci,p,br)::s ->
-        let t = mkCase(ci, zfun p, m, Array.map zfun br) in
+    | Zcase(ci,p,br)::s -> (* TODO: check if we need to add indices to Zcase -jls *)
+        let t = mkCase(ci, zfun p, [||], m, Array.map (Option.map zfun) br) in
         zip_term zfun t s
-    | Zproj(_,_,p)::s -> 
-        let t = mkProj (p, m) in 
+    | Zproj(_,_,p)::s ->
+        let t = mkProj (p, m) in
 	zip_term zfun t s
     | Zfix(fx,par)::s ->
         let h = mkApp(zip_term zfun (zfun fx) par,[|m|]) in
@@ -1108,18 +1129,17 @@ let create_clos_infos ?(evars=fun _ -> None) flgs env =
   create (fun _ -> inject) flgs env evars
 let oracle_of_infos infos = Environ.oracle infos.i_cache.i_env
 
-let infos_with_reds infos reds = 
+let infos_with_reds infos reds =
   { infos with i_flags = reds }
 
-let unfold_reference info key = 
+let unfold_reference info key =
   match key with
   | ConstKey (kn,_) ->
     if red_set info.i_flags (fCONST kn) then
-      ref_value_cache info key  
+      ref_value_cache info key
     else None
-  | VarKey i -> 
+  | VarKey i ->
     if red_set info.i_flags (fVAR i) then
       ref_value_cache info key
     else None
   | _ -> ref_value_cache info key
-  

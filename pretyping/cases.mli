@@ -26,6 +26,7 @@ type pattern_matching_error =
   | UnusedClause of cases_pattern list
   | NonExhaustive of cases_pattern list
   | CannotInferPredicate of (constr * types) array
+  | ComplexDependentMatch
 
 exception PatternMatchingError of env * pattern_matching_error
 
@@ -42,7 +43,7 @@ val compile_cases :
   env -> glob_constr option * tomatch_tuples * cases_clauses ->
   unsafe_judgment
 
-val constr_of_pat : 
+val constr_of_pat :
            Environ.env ->
            Evd.evar_map ref ->
            rel_declaration list ->
@@ -85,6 +86,8 @@ type tomatch_status =
   | NonDepAlias
   | Abstract of int * rel_declaration
 
+type tomatch_indices = constr array list
+
 type tomatch_stack = tomatch_status list
 
 (* We keep a constr for aliases and a cases_pattern for error message *)
@@ -102,11 +105,19 @@ type 'a pattern_matching_problem =
       evdref    : evar_map ref;
       pred      : constr;
       tomatch   : tomatch_stack;
+      indices   : tomatch_indices;
       history   : pattern_continuation;
       mat       : 'a matrix;
       caseloc   : Loc.t;
       casestyle : case_style;
       typing_function: type_constraint -> env -> evar_map ref -> 'a option -> unsafe_judgment }
+
+
+exception Negative_Success
+exception Difficult_Match
+
+val index_matching : env -> evar_map -> constr option array ->
+  constr array -> constr array -> unit
 
 
 val compile : 'a pattern_matching_problem -> Environ.unsafe_judgment
@@ -117,7 +128,7 @@ val prepare_predicate :            Loc.t ->
            Evd.evar_map ->
            Environ.env ->
            (Term.types * tomatch_type) list ->
+           tomatch_indices ->
            Context.rel_context list ->
            Constr.constr option ->
            'a option -> (Evd.evar_map * Names.name list * Term.constr) list
-

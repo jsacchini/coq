@@ -100,11 +100,11 @@ val msg_notice : std_ppcmds -> unit
 (** Message that should be displayed, such as [Print Foo] or [Show Bar]. *)
 
 val msg_warning : std_ppcmds -> unit
-(** Message indicating that something went wrong, but without serious 
+(** Message indicating that something went wrong, but without serious
     consequences. *)
 
 val msg_error : std_ppcmds -> unit
-(** Message indicating that something went really wrong, though still 
+(** Message indicating that something went really wrong, though still
     recoverable; otherwise an exception would have been raised. *)
 
 val msg_debug : std_ppcmds -> unit
@@ -167,7 +167,7 @@ val pr_nth : int -> std_ppcmds
 val prlist : ('a -> std_ppcmds) -> 'a list -> std_ppcmds
 (** Concatenation of the list contents, without any separator.
 
-    Unlike all other functions below, [prlist] works lazily. If a strict 
+    Unlike all other functions below, [prlist] works lazily. If a strict
     behavior is needed, use [prlist_strict] instead. *)
 
 val prlist_strict :  ('a -> std_ppcmds) -> 'a list -> std_ppcmds
@@ -186,6 +186,11 @@ val prvecti : (int -> 'a -> std_ppcmds) -> 'a array -> std_ppcmds
 
 val prvect_with_sep :
    (unit -> std_ppcmds) -> ('a -> std_ppcmds) -> 'a array -> std_ppcmds
+(** As [prlist_with_sep], but on arrays. *)
+
+val prvect_with_sep_opt :
+   (unit -> std_ppcmds) -> ('a -> std_ppcmds) -> (unit -> std_ppcmds) ->
+  'a option array -> std_ppcmds
 (** As [prlist_with_sep], but on arrays. *)
 
 val prvecti_with_sep :

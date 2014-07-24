@@ -188,8 +188,9 @@ let find_hyps t =
     | Term.Construct ((ind,_),_) ->
        let hyps = (fst (Global.lookup_inductive ind)).Declarations.mind_hyps in
         map_and_filter l hyps @ l
-    | Term.Case (_,t1,t2,b) ->
-       Array.fold_left (fun i x -> aux i x) (aux (aux l t1) t2) b
+    | Term.Case (_,t1,i,t2,b) ->
+      let b = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list b))) in  (* ignoring impossible branches -jls *)
+       Array.fold_left (fun i x -> aux i x) (aux (Array.fold_left (fun i x -> aux i x) (aux l t1) i) t2) b (* iterate over indices -jls *)
     | Term.Fix (_,(_,tys,bodies))
     | Term.CoFix (_,(_,tys,bodies)) ->
        let r = Array.fold_left (fun i x -> aux i x) l tys in
@@ -273,8 +274,8 @@ let theory_output_string ?(do_not_quote = false) s =
 let kind_of_inductive isrecord kn =
  "DEFINITION",
  if (fst (Global.lookup_inductive (kn,0))).Declarations.mind_finite
- then begin 
-   match isrecord with 
+ then begin
+   match isrecord with
    | Declare.KernelSilent -> "Record"
    | _ -> "Inductive"
  end

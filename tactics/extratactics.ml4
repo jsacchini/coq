@@ -73,7 +73,7 @@ let induction_arg_of_quantified_hyp = function
    ElimOnIdent and not as "constr" *)
 
 let elimOnConstrWithHoles tac with_evars c =
-  Tacticals.New.tclWITHHOLES with_evars (tac with_evars) 
+  Tacticals.New.tclWITHHOLES with_evars (tac with_evars)
     c.sigma (Some (ElimOnConstr c.it))
 
 TACTIC EXTEND simplify_eq_main
@@ -265,13 +265,13 @@ TACTIC EXTEND rewrite_star
 
 let add_rewrite_hint bases ort t lcsr =
   let env = Global.env() and sigma = Evd.empty in
-  let poly = Flags.is_universe_polymorphism () in 
-  let f ce = 
+  let poly = Flags.is_universe_polymorphism () in
+  let f ce =
     let c, ctx = Constrintern.interp_constr sigma env ce in
     let ctx =
-      if poly then 
+      if poly then
 	Evd.evar_universe_context_set ctx
-      else 
+      else
 	let cstrs = Evd.evar_universe_context_constraints ctx in
 	  (Global.add_constraints cstrs; Univ.ContextSet.empty)
     in
@@ -565,7 +565,7 @@ TACTIC EXTEND dep_generalize_eqs_vars
 | ["dependent" "generalize_eqs_vars" hyp(id) ] -> [ abstract_generalize ~force_dep:true ~generalize_vars:true id ]
 END
 
-(** Tactic to automatically simplify hypotheses of the form [Π Δ, x_i = t_i -> T] 
+(** Tactic to automatically simplify hypotheses of the form [Π Δ, x_i = t_i -> T]
     where [t_i] is closed w.r.t. Δ. Such hypotheses are automatically generated
     during dependent induction. For internal use. *)
 
@@ -581,12 +581,12 @@ END
 (* Contributed by Chung-Kil Hur (Winter 2009)                         *)
 (**********************************************************************)
 
-let subst_var_with_hole occ tid t = 
+let subst_var_with_hole occ tid t =
   let occref = if occ > 0 then ref occ else Find_subterm.error_invalid_occurrence [occ] in
   let locref = ref 0 in
   let rec substrec = function
-    | GVar (_,id) as x -> 
-        if Id.equal id tid 
+    | GVar (_,id) as x ->
+        if Id.equal id tid
         then
 	  (decr occref;
 	   if Int.equal !occref 0 then x
@@ -621,15 +621,15 @@ let out_arg = function
   | ArgVar _ -> anomaly (Pp.str "Unevaluated or_var variable")
   | ArgArg x -> x
 
-let hResolve id c occ t gl = 
-  let sigma = project gl in 
+let hResolve id c occ t gl =
+  let sigma = project gl in
   let env = Termops.clear_named_body id (pf_env gl) in
   let env_ids = Termops.ids_of_context env in
   let env_names = Termops.names_of_rel_context env in
-  let c_raw = Detyping.detype true env_ids env_names c in 
-  let t_raw = Detyping.detype true env_ids env_names t in 
+  let c_raw = Detyping.detype true env_ids env_names c in
+  let t_raw = Detyping.detype true env_ids env_names t in
   let rec resolve_hole t_hole =
-    try 
+    try
       Pretyping.understand sigma env t_hole
     with
       | Pretype_errors.PretypeError (_,_,Pretype_errors.UnsolvableImplicit _) as e ->
@@ -643,7 +643,7 @@ let hResolve id c occ t gl =
      (change_concl (mkLetIn (Anonymous,t_constr,t_constr_type,pf_concl gl))) gl
 
 let hResolve_auto id c t gl =
-  let rec resolve_auto n = 
+  let rec resolve_auto n =
     try
       hResolve id c n t gl
     with
@@ -690,13 +690,13 @@ exception Found of unit Proofview.tactic
 let rewrite_except h =
   Proofview.Goal.enter begin fun gl ->
   let hyps = Tacmach.New.pf_ids_of_hyps gl in
-  Tacticals.New.tclMAP (fun id -> if Id.equal id h then Proofview.tclUNIT () else 
+  Tacticals.New.tclMAP (fun id -> if Id.equal id h then Proofview.tclUNIT () else
       Tacticals.New.tclTRY (Equality.general_rewrite_in true Locus.AllOccurrences true true id (mkVar h) false))
     hyps
   end
 
 
-let refl_equal = 
+let refl_equal =
   let coq_base_constant s =
     Coqlib.gen_constant_in_modules "RecursiveDefinition"
       (Coqlib.init_modules @ [["Coq";"Arith";"Le"];["Coq";"Arith";"Lt"]]) s in
@@ -744,7 +744,7 @@ let case_eq_intros_rewrite x =
 
 let rec find_a_destructable_match t =
   match kind_of_term t with
-    | Case (_,_,x,_) when closed0 x ->
+    | Case (_,_,_,x,_) when closed0 x -> (* no index -jls *)
 	if isVar x then
 	  (* TODO check there is no rel n. *)
 	  raise (Found (Tacinterp.eval_tactic(<:tactic<destruct x>>)))
@@ -752,14 +752,14 @@ let rec find_a_destructable_match t =
 	  (* let _ = Pp.msgnl (Printer.pr_lconstr x)  in *)
 	  raise (Found (case_eq_intros_rewrite x))
     | _ -> iter_constr find_a_destructable_match t
-	
+
 
 let destauto t =
   try find_a_destructable_match t;
     Proofview.tclZERO (UserError ("",  str"No destructable match found"))
   with Found tac -> tac
 
-let destauto_in id = 
+let destauto_in id =
   Proofview.Goal.enter begin fun gl ->
   let ctype = Tacmach.New.of_old (fun g -> Tacmach.pf_type_of g (mkVar id)) gl in
 (*  Pp.msgnl (Printer.pr_lconstr (mkVar id)); *)
@@ -804,13 +804,15 @@ let rec has_evar x =
       has_evar t1 || has_evar t2 || has_evar t3
     | App (t1, ts) ->
       has_evar t1 || has_evar_array ts
-    | Case (_, t1, t2, ts) ->
-      has_evar t1 || has_evar t2 || has_evar_array ts
+    | Case (_, t1, ts0, t2, ts) -> (* index -jls *)
+      has_evar t1 || has_evar_array ts0 || has_evar t2 || has_evar_array_opt ts
     | Fix ((_, tr)) | CoFix ((_, tr)) ->
       has_evar_prec tr
     | Proj (p, c) -> has_evar c
 and has_evar_array x =
   Array.exists has_evar x
+and has_evar_array_opt x =
+  Array.exists (Option.cata has_evar false) x
 and has_evar_prec (_, ts1, ts2) =
   Array.exists has_evar ts1 || Array.exists has_evar ts2
 

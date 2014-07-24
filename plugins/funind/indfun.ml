@@ -163,11 +163,11 @@ let build_newrecursive
   in
   recdef,rec_impls
 
-let build_newrecursive l = 
-  let l' = List.map 
-    (fun ((fixna,_,bll,ar,body_opt),lnot) -> 
-       match body_opt with 
-	 | Some body -> 
+let build_newrecursive l =
+  let l' = List.map
+    (fun ((fixna,_,bll,ar,body_opt),lnot) ->
+       match body_opt with
+	 | Some body ->
 	     (fixna,bll,ar,body)
 	 | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given")
     ) l
@@ -254,14 +254,14 @@ let warning_error names e =
   let e = Cerrors.process_vernac_interp_error e in
   let e_explain e =
     match e with
-      | ToShow e -> 
+      | ToShow e ->
 	let e = Cerrors.process_vernac_interp_error e in
 	spc () ++ Errors.print e
-      | _ -> 
-	if do_observe () 
-	then 
-	  let e = Cerrors.process_vernac_interp_error e in 
-	  (spc () ++ Errors.print e) 
+      | _ ->
+	if do_observe ()
+	then
+	  let e = Cerrors.process_vernac_interp_error e in
+	  (spc () ++ Errors.print e)
 	else mt ()
   in
   match e with
@@ -350,7 +350,7 @@ let generate_principle  on_error
 let register_struct is_rec (fixpoint_exprl:(Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list) list) =
   match fixpoint_exprl with
     | [((_,fname),_,bl,ret_type,body),_] when not is_rec ->
-      let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in 
+      let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in
 	Command.do_definition fname (Decl_kinds.Global,(*FIXME*)false,Decl_kinds.Definition)
 	  bl None body (Some ret_type) (Lemmas.mk_hook (fun _ _ -> ()))
     | _ ->
@@ -447,8 +447,8 @@ let register_mes fname rec_impls wf_mes_expr wf_rel_expr_opt wf_arg using_lemmas
 	      | _ -> assert false
 	  with Not_found -> assert false
   in
-  let wf_rel_from_mes,is_mes = 
-    match wf_rel_expr_opt with 
+  let wf_rel_from_mes,is_mes =
+    match wf_rel_expr_opt with
       | None ->
 	  let ltof =
 	    let make_dir l = DirPath.make (List.rev_map Id.of_string l) in
@@ -464,10 +464,10 @@ let register_mes fname rec_impls wf_mes_expr wf_rel_expr_opt wf_arg using_lemmas
 	    Constrexpr_ops.mkAppC(Constrexpr_ops.mkRefC  ltof,[wf_arg_type;fun_from_mes])
 	  in
 	  wf_rel_from_mes,true
-      | Some wf_rel_expr -> 
-	  let wf_rel_with_mes = 
-	    let a = Names.Id.of_string "___a" in 
-	    let b = Names.Id.of_string "___b" in 
+      | Some wf_rel_expr ->
+	  let wf_rel_with_mes =
+	    let a = Names.Id.of_string "___a" in
+	    let b = Names.Id.of_string "___b" in
 	    Constrexpr_ops.mkLambdaC(
 	      [Loc.ghost,Name a;Loc.ghost,Name b],
 	      Constrexpr.Default Explicit,
@@ -480,12 +480,12 @@ let register_mes fname rec_impls wf_mes_expr wf_rel_expr_opt wf_arg using_lemmas
 			      )
 	  in
 	  wf_rel_with_mes,false
-  in			       
+  in
   register_wf ~is_mes:is_mes fname rec_impls wf_rel_from_mes (Some wf_arg)
     using_lemmas args ret_type body
 
-let map_option f = function 
-  | None -> None 
+let map_option f = function
+  | None -> None
   | Some v -> Some (f v)
 
 open Constrexpr
@@ -498,8 +498,8 @@ let make_assoc assoc l1 l2 =
   in
   List.fold_left2 fold assoc l1 l2
 
-let rec rebuild_bl (aux,assoc) bl typ = 
-	match bl,typ with 
+let rec rebuild_bl (aux,assoc) bl typ =
+	match bl,typ with
 	  | [], _ -> (List.rev aux,replace_vars_constr_expr assoc typ,assoc)
 	  | (Constrexpr.LocalRawAssum(nal,bk,_))::bl',typ ->
 	     rebuild_nal (aux,assoc) bk bl' nal (List.length nal) typ
@@ -507,24 +507,24 @@ let rec rebuild_bl (aux,assoc) bl typ =
 	    rebuild_bl ((Constrexpr.LocalRawDef(na,replace_vars_constr_expr assoc nat)::aux),assoc)
 	      bl' typ'
 	  | _ -> assert false
-      and rebuild_nal (aux,assoc) bk bl' nal lnal typ = 
-	match nal,typ with 
+      and rebuild_nal (aux,assoc) bk bl' nal lnal typ =
+	match nal,typ with
 	  | [], _ -> rebuild_bl (aux,assoc) bl' typ
 	  | _,CProdN(_,[],typ) -> rebuild_nal (aux,assoc) bk bl' nal lnal typ
-	  | _,CProdN(_,(nal',bk',nal't)::rest,typ') -> 
-	    let lnal' = List.length nal' in 
-	    if lnal' >= lnal 
-	    then 
+	  | _,CProdN(_,(nal',bk',nal't)::rest,typ') ->
+	    let lnal' = List.length nal' in
+	    if lnal' >= lnal
+	    then
 	      let old_nal',new_nal' = List.chop lnal nal' in
 	      let nassoc = make_assoc assoc old_nal' nal in
 	      let assum = LocalRawAssum(nal,bk,replace_vars_constr_expr assoc nal't) in
-	      rebuild_bl ((assum :: aux), nassoc) bl' 
+	      rebuild_bl ((assum :: aux), nassoc) bl'
 		(if List.is_empty new_nal' && List.is_empty rest
 		 then typ'
 		 else if List.is_empty new_nal'
 		 then CProdN(Loc.ghost,rest,typ')
 		 else CProdN(Loc.ghost,((new_nal',bk',nal't)::rest),typ'))
-	    else 
+	    else
 	      let captured_nal,non_captured_nal = List.chop lnal' nal in
 	      let nassoc = make_assoc assoc nal' captured_nal in
 	      let assum = LocalRawAssum(captured_nal,bk,replace_vars_constr_expr assoc nal't) in
@@ -534,21 +534,21 @@ let rec rebuild_bl (aux,assoc) bl typ =
 
 let rebuild_bl (aux,assoc) bl typ = rebuild_bl (aux,assoc) bl typ
 
-let recompute_binder_list (fixpoint_exprl : (Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list) list) = 
+let recompute_binder_list (fixpoint_exprl : (Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list) list) =
   let fixl,ntns = Command.extract_fixpoint_components false fixpoint_exprl in
   let ((_,_,typel),_,_) = Command.interp_fixpoint fixl ntns in
-  let constr_expr_typel = 
-    with_full_print (List.map (Constrextern.extern_constr false (Global.env ()))) typel in 
-  let fixpoint_exprl_with_new_bl = 
-    List.map2 (fun ((lna,(rec_arg_opt,rec_order),bl,ret_typ,opt_body),notation_list) fix_typ -> 
-     
-      let new_bl',new_ret_type,_ = rebuild_bl ([],Id.Map.empty) bl fix_typ in 
+  let constr_expr_typel =
+    with_full_print (List.map (Constrextern.extern_constr false (Global.env ()))) typel in
+  let fixpoint_exprl_with_new_bl =
+    List.map2 (fun ((lna,(rec_arg_opt,rec_order),bl,ret_typ,opt_body),notation_list) fix_typ ->
+
+      let new_bl',new_ret_type,_ = rebuild_bl ([],Id.Map.empty) bl fix_typ in
       (((lna,(rec_arg_opt,rec_order),new_bl',new_ret_type,opt_body),notation_list):(Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list))
     )
-      fixpoint_exprl constr_expr_typel 
-  in 
+      fixpoint_exprl constr_expr_typel
+  in
   fixpoint_exprl_with_new_bl
-  
+
 
 let do_generate_principle on_error register_built interactive_proof
     (fixpoint_exprl:(Vernacexpr.fixpoint_expr * Vernacexpr.decl_notation list) list) :unit =
@@ -557,14 +557,14 @@ let do_generate_principle on_error register_built interactive_proof
     match fixpoint_exprl with
       | [((_,(wf_x,Constrexpr.CWfRec wf_rel),_,_,_),_) as fixpoint_expr] ->
  	  let ((((_,name),_,args,types,body)),_)  as fixpoint_expr =
-	    match recompute_binder_list [fixpoint_expr] with 
+	    match recompute_binder_list [fixpoint_expr] with
 	      | [e] -> e
 	      | _ -> assert false
-	  in 
-	  let fixpoint_exprl = [fixpoint_expr] in 
-	  let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in 
+	  in
+	  let fixpoint_exprl = [fixpoint_expr] in
+	  let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in
 	  let recdefs,rec_impls = build_newrecursive fixpoint_exprl in
-	  let using_lemmas = [] in 
+	  let using_lemmas = [] in
 	  let pre_hook =
 	    generate_principle
 	      on_error
@@ -579,14 +579,14 @@ let do_generate_principle on_error register_built interactive_proof
 	  false
       |[((_,(wf_x,Constrexpr.CMeasureRec(wf_mes,wf_rel_opt)),_,_,_),_) as fixpoint_expr] ->
  	  let ((((_,name),_,args,types,body)),_)  as fixpoint_expr =
-	    match recompute_binder_list [fixpoint_expr] with 
+	    match recompute_binder_list [fixpoint_expr] with
 	      | [e] -> e
 	      | _ -> assert false
-	  in 
-	  let fixpoint_exprl = [fixpoint_expr] in 
+	  in
+	  let fixpoint_exprl = [fixpoint_expr] in
 	  let recdefs,rec_impls = build_newrecursive fixpoint_exprl in
 	  let using_lemmas = [] in
-	  let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in 
+	  let body = match body with | Some body -> body | None -> user_err_loc (Loc.ghost,"Function",str "Body of Function must be given") in
 	  let pre_hook =
 	    generate_principle
 	      on_error
@@ -601,14 +601,14 @@ let do_generate_principle on_error register_built interactive_proof
 	  true
       | _ ->
 	  List.iter (function ((_na,(_,ord),_args,_body,_type),_not) ->
-		       match ord with 
+		       match ord with
 			 | Constrexpr.CMeasureRec _ | Constrexpr.CWfRec _ ->
 			     error
 			       ("Cannot use mutual definition with well-founded recursion or measure")
 			 | _ -> ()
 		    )
 	    fixpoint_exprl;
-	let fixpoint_exprl = recompute_binder_list fixpoint_exprl in 
+	let fixpoint_exprl = recompute_binder_list fixpoint_exprl in
 	let fix_names =
 	  List.map (function (((_,name),_,_,_,_),_) -> name) fixpoint_exprl
 	in
@@ -625,7 +625,7 @@ let do_generate_principle on_error register_built interactive_proof
 	  interactive_proof
 	  (Functional_principles_proofs.prove_princ_for_struct interactive_proof);
 	if register_built then derive_inversion fix_names;
-	true; 
+	true;
   in
   ()
 
@@ -660,9 +660,9 @@ let rec add_args id new_args b =
 	   List.map (fun (e,o) -> add_args id new_args e,o) bl)
   | CCases(loc,sty,b_option,cel,cal) ->
       CCases(loc,sty,Option.map (add_args id new_args) b_option,
-	     List.map (fun (b,(na,b_option)) ->
+	     List.map (fun (b,(na,b_option,idxs)) ->
 			 add_args id new_args b,
-			 (na, b_option)) cel,
+			 (na, b_option,idxs)) cel, (* ignoring indices -jls *)
 	     List.map (fun (loc,cpl,e) -> (loc,cpl,add_args id new_args e)) cal
 	    )
   | CLetTuple(loc,nal,(na,b_option),b1,b2) ->
@@ -816,5 +816,3 @@ let make_graph (f_ref:global_reference) =
   Dumpglob.continue ()
 
 let do_generate_principle = do_generate_principle warning_error true
-
-

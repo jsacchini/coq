@@ -195,7 +195,7 @@ type constraints_addition =
 
 let add_constraints cst senv =
   match cst with
-  | Later fc -> 
+  | Later fc ->
     {senv with future_cst = fc :: senv.future_cst}
   | Now cst ->
   { senv with
@@ -305,8 +305,8 @@ let push_named_def (id,de) senv =
   let c,typ,univs = Term_typing.translate_local_def senv.env id de in
   let senv' = push_context univs senv in
   let c, senv' = match c with
-    | Def c -> Mod_subst.force_constr c, senv' 
-    | OpaqueDef o -> Opaqueproof.force_proof o, 
+    | Def c -> Mod_subst.force_constr c, senv'
+    | OpaqueDef o -> Opaqueproof.force_proof o,
       push_context_set (Opaqueproof.force_constraints o) senv'
     | _ -> assert false in
   let env'' = safe_push_named (id,Some c,typ) senv'.env in
@@ -339,7 +339,7 @@ let globalize_constant_universes cb =
     [Now Univ.Constraint.empty]
   else
     let cstrs = Univ.UContext.constraints cb.const_universes in
-      Now cstrs ::  
+      Now cstrs ::
 	(match cb.const_body with
 	| (Undef _ | Def _) -> []
 	| OpaqueDef lc ->
@@ -349,14 +349,14 @@ let globalize_constant_universes cb =
             match Future.peek_val fc with
             | None -> [Later (Future.chain ~pure:true fc Univ.ContextSet.constraints)]
             | Some c -> [Now (Univ.ContextSet.constraints c)])
-      
+
 let globalize_mind_universes mb =
   if mb.mind_polymorphic then
     [Now Univ.Constraint.empty]
   else
     [Now (Univ.UContext.constraints mb.mind_universes)]
 
-let constraints_of_sfb sfb = 
+let constraints_of_sfb sfb =
   match sfb with
   | SFBconst cb -> globalize_constant_universes cb
   | SFBmind mib -> globalize_mind_universes mib

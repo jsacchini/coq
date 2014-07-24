@@ -46,12 +46,12 @@ let observe_tac s tac g = observe_tac_stream (str s) tac g
 
 let debug_queue = Stack.create ()
 
-let rec print_debug_queue b e = 
-  if  not (Stack.is_empty debug_queue) 
+let rec print_debug_queue b e =
+  if  not (Stack.is_empty debug_queue)
   then
     begin
-      let lmsg,goal = Stack.pop debug_queue in 
-      if b then 
+      let lmsg,goal = Stack.pop debug_queue in
+      if b then
 	Pp.msg_debug (lmsg ++ (str " raised exception " ++ Errors.print e) ++ str " on goal " ++ goal)
       else
 	begin
@@ -65,12 +65,12 @@ let observe strm =
   then Pp.msg_debug strm
   else ()
 
-let do_observe_tac s tac g = 
+let do_observe_tac s tac g =
   let goal = Printer.pr_goal g in
-  let lmsg = (str "observation : ") ++ s in 
+  let lmsg = (str "observation : ") ++ s in
   Stack.push (lmsg,goal) debug_queue;
-  try 
-    let v = tac g in 
+  try
+    let v = tac g in
     ignore(Stack.pop debug_queue);
     v
   with reraise ->
@@ -84,7 +84,7 @@ let observe_tac_stream s tac g =
   else tac g
 
 let observe_tac s = observe_tac_stream (str s)
-  
+
 
 let list_chop ?(msg="") n l =
   try
@@ -617,7 +617,7 @@ let treat_new_case ptes_infos nb_prod continue_tac term dyn_infos =
 	   }
 	 in
 	 clean_goal_with_heq ptes_infos continue_tac new_infos  g'
-      )]) 
+      )])
     ]
       g
 
@@ -691,12 +691,12 @@ let build_proof
     fun g ->
 (*      observe (str "proving on " ++ Printer.pr_lconstr_env (pf_env g) term);*)
 	match kind_of_term dyn_infos.info with
-	  | Case(ci,ct,t,cb) ->
+	  | Case(ci,ct,_,t,cb) -> (* ignoring indices -jls *)
 	      let do_finalize_t dyn_info' =
 		fun g ->
 		  let t = dyn_info'.info in
 		  let dyn_infos = {dyn_info' with info =
-		      mkCase(ci,ct,t,cb)} in
+		      mkCase(ci,ct,[||],t,cb)} in (* no index -jls *)
 		  let g_nb_prod = nb_prod (pf_concl g) in
 		  let type_of_term = pf_type_of g t in
 		  let term_eq =
@@ -1701,11 +1701,3 @@ let prove_principle_for_gen
 
     ]
     gl
-
-
-
-
-
-
-
-

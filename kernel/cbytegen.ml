@@ -353,7 +353,7 @@ let rec str_const c =
   | App(f,args) ->
       begin
 	match kind_of_term f with
-	| Construct(((kn,j),i),u) -> 
+	| Construct(((kn,j),i),u) ->
             begin
 	    let oib = lookup_mind kn !global_env in
 	    let oip = oib.mind_packets.(j) in
@@ -423,7 +423,7 @@ let rec str_const c =
 	| _ -> Bconstr c
       end
   | Ind (ind,u) -> Bstrconst (Const_ind ind)
-  | Construct (((kn,j),i),u) ->  
+  | Construct (((kn,j),i),u) ->
       begin
       (* spiwack: tries first to apply the run-time compilation
            behavior of the constructor, as in 2/ above *)
@@ -499,7 +499,7 @@ let rec compile_constr reloc c sz cont =
   match kind_of_term c with
   | Meta _ -> invalid_arg "Cbytegen.compile_constr : Meta"
   | Evar _ -> invalid_arg "Cbytegen.compile_constr : Evar"
-  | Proj (p,c) -> 
+  | Proj (p,c) ->
     (* compile_const reloc p [|c|] sz cont *)
     let cb = lookup_constant p !global_env in
       (* TODO: better representation of projections *)
@@ -602,7 +602,7 @@ let rec compile_constr reloc c sz cont =
       compile_fv reloc fv.fv_rev sz
 	(Kclosurecofix(fv.size, init, lbl_types, lbl_bodies) :: cont)
 
-  | Case(ci,t,a,branchs) ->
+  | Case(ci,t,_,a,branchs) -> (* TODO: compile indices -jls *)
       let ind = ci.ci_ind in
       let mib = lookup_mind (fst ind) !global_env in
       let oib = mib.mind_packets.(snd ind) in
@@ -631,13 +631,20 @@ let rec compile_constr reloc c sz cont =
       (* Compiling regular constructor branches *)
       for i = 0 to Array.length tbl - 1 do
 	let tag, arity = tbl.(i) in
+        if Option.is_empty branchs.(i) then
+          (* Impossible branch -jls *)
+          let lbl_b,code_b = label_code (Kstop :: branch :: !c) in
+          lbl_consts.(tag) <- lbl_b;
+          c := code_b
+        else
+        let br_body = Option.get branchs.(i) in
 	if Int.equal arity 0 then
 	  let lbl_b,code_b =
-	    label_code(compile_constr reloc branchs.(i) sz_b (branch :: !c)) in
+	    label_code(compile_constr reloc br_body sz_b (branch :: !c)) in
 	  lbl_consts.(tag) <- lbl_b;
 	  c := code_b
 	else
-	  let args, body = decompose_lam branchs.(i) in
+	  let args, body = decompose_lam br_body in
 	  let nargs = List.length args in
 	  let lbl_b,code_b =
 	    label_code(
@@ -648,7 +655,7 @@ let rec compile_constr reloc c sz cont =
 	    else
 	      let sz_appterm = if is_tailcall then sz_b + arity else arity in
 	      Kpushfields arity ::
-	      compile_constr reloc branchs.(i) (sz_b+arity)
+	      compile_constr reloc br_body (sz_b+arity)
 		(Kappterm(arity,sz_appterm) :: !c))
 	  in
 	  lbl_blocks.(tag) <- lbl_b;

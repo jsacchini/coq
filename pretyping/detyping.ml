@@ -241,15 +241,17 @@ let rec build_tree na isgoal e ci cl =
   let mkpat n rhs pl = PatCstr(dl,(ci.ci_ind,n+1),pl,update_name na rhs) in
   let cnl = ci.ci_cstr_ndecls in
   let cna = ci.ci_cstr_nargs in
-  List.flatten
-    (List.init (Array.length cl)
-      (fun i -> contract_branch isgoal e (cnl.(i),cna.(i),mkpat i,cl.(i))))
+  let mk_branch i = match cl.(i) with
+  | Some br -> Some (contract_branch isgoal e (cnl.(i),cna.(i),mkpat i,br))
+  | None -> None in
+  List.flatten (List.map_filter (fun x -> x)
+                  (List.init (Array.length cl) mk_branch))
 
 and align_tree nal isgoal (e,c as rhs) = match nal with
   | [] -> [[],rhs]
   | na::nal ->
     match kind_of_term c with
-    | Case (ci,p,c,cl) when
+    | Case (ci,p,i,c,cl) when (* TODO: what? -jls *)
         eq_constr c (mkRel (List.index Name.equal na (snd e)))
 	&& (* don't contract if p dependent *)
 	computable p (ci.ci_pp_info.ind_nargs) ->
@@ -309,10 +311,13 @@ let it_destRLambda_or_LetIn_names n c =
               | _ -> (GApp (dl,c,[a])))
   in aux n [] c
 
-let detype_case computable detype detype_eqns testdep avoid data p c bl =
+let detype_case computable detype detype_eqns testdep avoid data p i c bl = (* indices -jls *)
   let (indsp,st,consnargsl,k) = data in
   let synth_type = synthetize_type () in
   let tomatch = detype c in
+  (* indices -jls *)
+  let idx_defs = List.map (fun x -> Anonymous, detype x) (Array.to_list i) in
+  let idx_defs = if idx_defs == [] then None else Some idx_defs in
   let alias, aliastyp, pred=
     if (not !Flags.raw_print) && synth_type && computable && not (Int.equal (Array.length bl) 0)
     then
@@ -347,22 +352,28 @@ let detype_case computable detype detype_eqns testdep avoid data p c bl =
   in
   match tag, aliastyp with
   | LetStyle, None ->
-      let bl' = Array.map detype bl in
-      let (nal,d) = it_destRLambda_or_LetIn_names consnargsl.(0) bl'.(0) in
+      (* Assume that this is not a DPM -jls *)
+      let bl' = Array.map (Option.map detype) bl in
+      let b0 = Option.get bl'.(0) in
+      let (nal,d) = it_destRLambda_or_LetIn_names consnargsl.(0) b0 in
       GLetTuple (dl,nal,(alias,pred),tomatch,d)
   | IfStyle, None ->
-      let bl' = Array.map detype bl in
+      (* Assume that this is not a DPM -jls *)
+      let bl' = Array.map (Option.map detype) bl in
+      let bl0 = Array.map Option.get bl in
+      let bl0' = Array.map Option.get bl' in (* TODO: fix this -jls *)
       let nondepbrs =
-	Array.map3 (extract_nondep_branches testdep) bl bl' consnargsl in
+        Array.map3 (extract_nondep_branches testdep) bl0 bl0' consnargsl in
       if Array.for_all ((!=) None) nondepbrs then
 	GIf (dl,tomatch,(alias,pred),
              Option.get nondepbrs.(0),Option.get nondepbrs.(1))
       else
 	let eqnl = detype_eqns constructs consnargsl bl in
-	GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
+	GCases (dl,tag,pred,[tomatch,(alias,aliastyp,None)],eqnl)
+          (* TODO: check the uses of None -jls *)
   | _ ->
       let eqnl = detype_eqns constructs consnargsl bl in
-      GCases (dl,tag,pred,[tomatch,(alias,aliastyp)],eqnl)
+      GCases (dl,tag,pred,[tomatch,(alias,aliastyp,idx_defs)],eqnl)
 
 let detype_sort = function
   | Prop Null -> GProp
@@ -384,7 +395,7 @@ let set_detype_anonymous f = detype_anonymous := f
 let detype_level l =
   GType (Some (Pp.string_of_ppcmds (Univ.Level.pr l)))
 
-let detype_instance l = 
+let detype_instance l =
   if Univ.Instance.is_empty l then None
   else Some (List.map detype_level (Array.to_list (Univ.Instance.to_array l)))
 
@@ -419,9 +430,9 @@ let rec detype (isgoal:bool) avoid env t =
     | Lambda (na,ty,c) -> detype_binder isgoal BLambda avoid env na ty c
     | LetIn (na,b,_,c) -> detype_binder isgoal BLetIn avoid env na b c
     | App (f,args) ->
-      let mkapp f' args' = 
+      let mkapp f' args' =
  	match f' with
- 	| GApp (dl',f',args'') -> 
+ 	| GApp (dl',f',args'') ->
  	  GApp (dl,f',args''@args')
  	| _ -> GApp (dl,f',args')
       in
@@ -437,14 +448,16 @@ let rec detype (isgoal:bool) avoid env t =
 	GRef (dl, IndRef ind_sp, detype_instance u)
     | Construct (cstr_sp,u) ->
 	GRef (dl, ConstructRef cstr_sp, detype_instance u)
-    | Case (ci,p,c,bl) ->
-	let comp = computable p (ci.ci_pp_info.ind_nargs) in
-	detype_case comp (detype isgoal avoid env)
+    | Case (ci,p,i,c,bl) ->
+        (* For DPM, we force printing the predicate -jls *)
+        let comp = (computable p (ci.ci_pp_info.ind_nargs)
+                    && Int.equal (Array.length i) 0) in
+        detype_case comp (detype isgoal avoid env)
 	  (detype_eqns isgoal avoid env ci comp)
 	  is_nondep_branch avoid
 	  (ci.ci_ind,ci.ci_pp_info.style,
 	   ci.ci_cstr_ndecls,ci.ci_pp_info.ind_nargs)
-	  (Some p) c bl
+          (Some p) i c bl
     | Fix (nvn,recdef) -> detype_fix isgoal avoid env nvn recdef
     | CoFix (n,recdef) -> detype_cofix isgoal avoid env n recdef
 
@@ -517,14 +530,34 @@ and share_names isgoal n l avoid env c t =
         (List.rev l,c,t)
 
 and detype_eqns isgoal avoid env ci computable constructs consnargsl bl =
+  (* Remove argument definitions from branch, if they exists *)
+  let branch_letin_to_lam n br =
+    let (args, body) = decompose_lam_assum br in
+    if List.length args < ci.ci_cstr_nargs.(n) then
+    (* Not enough lambdas; probably an incomplete term.
+       We leave the branch untouched -jls *)
+      br
+    else
+      let (br_args, rest) = List.chop ci.ci_cstr_nargs.(n) args in
+      let br_args = List.map (fun (x,_,t) -> (x,None,t)) br_args in
+      (* Rebuild branch body without definitions *)
+        it_mkLambda_or_LetIn (it_mkLambda_or_LetIn body rest) br_args
+  in
+  let branch_letin_to_lam_opt n br = Option.map (branch_letin_to_lam n) br in
+  let bl = Array.mapi branch_letin_to_lam_opt bl in
   try
     if !Flags.raw_print || not (reverse_matching ()) then raise Exit;
     let mat = build_tree Anonymous isgoal (avoid,env) ci bl in
     List.map (fun (pat,((avoid,env),c)) -> (dl,[],[pat],detype isgoal avoid env c))
       mat
   with e when Errors.noncritical e ->
-    Array.to_list
-      (Array.map3 (detype_eqn isgoal avoid env) constructs consnargsl bl)
+    let opt_map3 f x y z = match z with
+    | Some z' -> Some (f x y z')
+    | None -> None in
+    List.map_filter (fun x -> x)
+      (Array.to_list
+         (Array.map3 (opt_map3 (detype_eqn isgoal avoid env))
+            constructs consnargsl bl))
 
 and detype_eqn isgoal avoid env constr construct_nargs branch =
   let make_pat x avoid env b ids =
@@ -625,7 +658,7 @@ let rec subst_glob_constr subst raw =
 	if r' == r && rl' == rl then raw else
 	  GApp(loc,r',rl')
 
-  | GProj (loc,p,c) -> 
+  | GProj (loc,p,c) ->
     let p' = subst_constant subst p in
     let c' = subst_glob_constr subst c in
       if p' == p && c' == c then raw
@@ -650,12 +683,15 @@ let rec subst_glob_constr subst raw =
       let rtno' = Option.smartmap (subst_glob_constr subst) rtno
       and rl' = List.smartmap (fun (a,x as y) ->
         let a' = subst_glob_constr subst a in
-        let (n,topt) = x in
+        let (n,topt,idx) = x in
+        let idx' = Option.smartmap
+          (List.smartmap (fun (x, d) -> x, subst_glob_constr subst d)) idx in
         let topt' = Option.smartmap
           (fun (loc,(sp,i),y as t) ->
             let sp' = subst_mind subst sp in
             if sp == sp' then t else (loc,(sp',i),y)) topt in
-        if a == a' && topt == topt' then y else (a',(n,topt'))) rl
+        if a == a' && topt == topt' && idx' == idx
+        then y else (a',(n,topt',idx'))) rl
       and branches' = List.smartmap
 			(fun (loc,idl,cpl,r as branch) ->
 			   let cpl' =
@@ -727,4 +763,7 @@ let simple_cases_matrix_of_branches ind brs =
 
 let return_type_of_predicate ind nrealargs_ctxt pred =
   let nal,p = it_destRLambda_or_LetIn_names (nrealargs_ctxt+1) pred in
-  (List.hd nal, Some (Loc.ghost, ind, List.tl nal)), Some p
+  (List.hd nal, Some (Loc.ghost, ind, List.tl nal), None), Some p
+    (* TODO: check if we need to put something other than None here.
+       It seems that this functions is only used in interp/constrextern.ml
+       for translating patterns to constr_expr -jls *)

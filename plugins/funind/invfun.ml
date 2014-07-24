@@ -113,7 +113,7 @@ let id_to_constr id =
 let generate_type g_to_f f graph i =
   (*i we deduce the number of arguments of the function and its returned type from the graph i*)
   let gr,u = destInd graph in
-  let graph_arity = Inductive.type_of_inductive (Global.env()) 
+  let graph_arity = Inductive.type_of_inductive (Global.env())
     (Global.lookup_inductive gr, u) in
   let ctxt,_ = decompose_prod_assum graph_arity in
   let fun_ctxt,res_type =
@@ -309,7 +309,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	  (pf_hyps g)
 	  ([])
       in
-      let pre_args g = List.rev (pre_args g) in 
+      let pre_args g = List.rev (pre_args g) in
       let pre_tac g =
 	List.fold_right
 	  (fun (id,b,t) pre_tac ->
@@ -324,7 +324,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	  (pf_hyps g)
 	  tclIDTAC
       in
-*)     
+*)
       let pre_args =
       	List.fold_right
       	  (fun (_,pat) acc ->
@@ -405,9 +405,9 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
       (
 	tclTHENSEQ
 	  [
-	    observe_tac("h_intro_patterns ")  (let l = (List.nth intro_pats (pred i)) in 
-					       match l with 
-						 | [] -> tclIDTAC 
+	    observe_tac("h_intro_patterns ")  (let l = (List.nth intro_pats (pred i)) in
+					       match l with
+						 | [] -> tclIDTAC
 						 | _ -> Proofview.V82.of_tactic (intro_patterns l));
 	    (* unfolding of all the defined variables introduced by this branch *)
 	    (* observe_tac "unfolding" pre_tac; *)
@@ -421,13 +421,13 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	      )
 	      Locusops.onConcl;
 	    observe_tac ("toto ") tclIDTAC;
-    
+
 	    (* introducing the the result of the graph and the equality hypothesis *)
 	    observe_tac "introducing" (tclMAP (fun x -> Proofview.V82.of_tactic (Simple.intro x)) [res;hres]);
 	    (* replacing [res] with its value *)
 	    observe_tac "rewriting res value" (Proofview.V82.of_tactic (Equality.rewriteLR (mkVar hres)));
 	    (* Conclusion *)
-	    observe_tac "exact" (fun g -> Proofview.V82.of_tactic (exact_check (app_constructor g)) g)  
+	    observe_tac "exact" (fun g -> Proofview.V82.of_tactic (exact_check (app_constructor g)) g)
 	  ]
       )
 	g
@@ -474,7 +474,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
       (* Glob_term.ExplicitBindings *) (params_bindings@lemmas_bindings)
     in
     tclTHENSEQ
-      [ 
+      [
 	observe_tac "principle" (Proofview.V82.of_tactic (assert_by
 	  (Name principle_id)
 	  princ_type
@@ -484,7 +484,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	observe_tac "idtac" tclIDTAC;
 	tclTHEN_i
 	  (observe_tac "functional_induction" (
-	    (fun gl -> 
+	    (fun gl ->
 	      let term = mkApp (mkVar principle_id,Array.of_list bindings) in
 	      let gl', _ty = pf_eapply Typing.e_type_of gl term in
 		apply term gl')
@@ -754,14 +754,14 @@ and intros_with_rewrite_aux : tactic =
 		      then
 			let id = pf_get_new_id (Id.of_string "y") g  in
 			tclTHENSEQ [ Proofview.V82.of_tactic (Simple.intro id); thin [id]; intros_with_rewrite ] g
-		      else if isVar args.(1) && (Environ.evaluable_named (destVar args.(1)) (pf_env g)) 
+		      else if isVar args.(1) && (Environ.evaluable_named (destVar args.(1)) (pf_env g))
 		      then tclTHENSEQ[
 			unfold_in_concl [(Locus.AllOccurrences, Names.EvalVarRef (destVar args.(1)))];
 			tclMAP (fun id -> tclTRY(unfold_in_hyp [(Locus.AllOccurrences, Names.EvalVarRef (destVar args.(1)))] ((destVar args.(1)),Locus.InHyp) ))
 			  (pf_ids_of_hyps g);
 			intros_with_rewrite
 		      ] g
-		      else if isVar args.(2) && (Environ.evaluable_named (destVar args.(2)) (pf_env g)) 
+		      else if isVar args.(2) && (Environ.evaluable_named (destVar args.(2)) (pf_env g))
 		      then tclTHENSEQ[
 			unfold_in_concl [(Locus.AllOccurrences, Names.EvalVarRef (destVar args.(2)))];
 			tclMAP (fun id -> tclTRY(unfold_in_hyp [(Locus.AllOccurrences, Names.EvalVarRef (destVar args.(2)))] ((destVar args.(2)),Locus.InHyp) ))
@@ -777,8 +777,8 @@ and intros_with_rewrite_aux : tactic =
 				     intros_with_rewrite
 				   ]
 			  g
-		      else if isVar args.(2) 
-		      then 
+		      else if isVar args.(2)
+		      then
 			let id = pf_get_new_id (Id.of_string "y") g  in
 			tclTHENSEQ [ Proofview.V82.of_tactic (Simple.intro id);
 				     generalize_dependent_of (destVar args.(2)) id;
@@ -797,7 +797,7 @@ and intros_with_rewrite_aux : tactic =
 			end
 		  | Ind _ when eq_constr t (Coqlib.build_coq_False ()) ->
 		      Proofview.V82.of_tactic Tauto.tauto g
-		  | Case(_,_,v,_) ->
+		  | Case(_,_,_,v,_) -> (* no index -jls *)
 		      tclTHENSEQ[
 			Proofview.V82.of_tactic (general_case_analysis false (v,NoBindings));
 			intros_with_rewrite
@@ -834,7 +834,7 @@ let rec reflexivity_with_destruct_cases g =
   let destruct_case () =
     try
       match kind_of_term (snd (destApp (pf_concl g))).(2) with
-	| Case(_,_,v,_) ->
+	| Case(_,_,_,v,_) -> (* no index -jls *)
 	    tclTHENSEQ[
 	      Proofview.V82.of_tactic (general_case_analysis false (v,NoBindings));
 	      Proofview.V82.of_tactic intros;
@@ -1108,7 +1108,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
     in
     let kn,_ as graph_ind  = fst (destInd graphs_constr.(0)) in
     let  mib,mip = Global.lookup_inductive graph_ind in
-    let sigma, scheme = 
+    let sigma, scheme =
 	(Indrec.build_mutual_induction_scheme (Global.env ()) Evd.empty
 	   (Array.to_list
 	      (Array.mapi

@@ -74,7 +74,7 @@ let type_of_const t =
     Const sp -> Typeops.type_of_constant (Global.env()) sp
     |_ -> assert false
 
-let constr_of_global x = 
+let constr_of_global x =
   fst (Universes.unsafe_constr_of_global x)
 
 let constant sl s = constr_of_global (find_reference sl s)
@@ -124,8 +124,8 @@ let lt = function () -> (coq_base_constant "lt")
 let le = function () -> (coq_base_constant "le")
 let ex = function () -> (coq_base_constant "ex")
 let nat = function () -> (coq_base_constant "nat")
-let iter_ref () =  
-  try find_reference ["Recdef"] "iter" 
+let iter_ref () =
+  try find_reference ["Recdef"] "iter"
   with Not_found -> error "module Recdef not loaded"
 let iter = function () -> (constr_of_global (delayed_force iter_ref))
 let eq = function () -> (coq_base_constant "eq")
@@ -181,7 +181,7 @@ let (value_f:constr list -> global_reference -> constr) =
       GCases
 	(d0,RegularStyle,None,
 	 [GApp(d0, GRef(d0,fterm,None), List.rev_map (fun x_id -> GVar(d0, x_id)) rev_x_id_l),
-	  (Anonymous,None)],
+	  (Anonymous,None,None)], (* no indices -jls *)
 	 [d0, [v_id], [PatCstr(d0,(destIndRef
 				     (delayed_force coq_sig_ref),1),
 			       [PatVar(d0, Name v_id);
@@ -201,12 +201,12 @@ let (declare_f : Id.t -> logical_kind -> constr list -> global_reference -> glob
 (* Debuging mechanism *)
 let debug_queue = Stack.create ()
 
-let rec print_debug_queue b e = 
-  if  not (Stack.is_empty debug_queue) 
+let rec print_debug_queue b e =
+  if  not (Stack.is_empty debug_queue)
   then
     begin
-      let lmsg,goal = Stack.pop debug_queue in 
-      if b then 
+      let lmsg,goal = Stack.pop debug_queue in
+      if b then
 	Pp.msg_debug (lmsg ++ (str " raised exception " ++ Errors.print e) ++ str " on goal " ++ goal)
       else
 	begin
@@ -221,13 +221,13 @@ let observe strm =
   else ()
 
 
-let do_observe_tac s tac g = 
+let do_observe_tac s tac g =
   let goal = Printer.pr_goal g in
-  let lmsg = (str "recdef : ") ++ s in 
+  let lmsg = (str "recdef : ") ++ s in
   observe (s++fnl());
   Stack.push (lmsg,goal) debug_queue;
-  try 
-    let v = tac g in 
+  try
+    let v = tac g in
     ignore(Stack.pop debug_queue);
     v
   with reraise ->
@@ -271,19 +271,19 @@ let tclUSER_if_not_mes concl_tac is_mes names_to_suppress =
 
 
 
-  
+
 
 (* Travelling term.
-   Both definitions of [f_terminate] and [f_equation] use the same generic 
+   Both definitions of [f_terminate] and [f_equation] use the same generic
    travelling mechanism.
 *)
 
-(* [check_not_nested forbidden e] checks that [e] does not contains any variable 
+(* [check_not_nested forbidden e] checks that [e] does not contains any variable
    of [forbidden]
 *)
 let check_not_nested forbidden e =
-  let rec check_not_nested e =  
-    match kind_of_term e with 
+  let rec check_not_nested e =
+    match kind_of_term e with
       | Rel _ -> ()
       | Var x ->
         if Id.List.mem x forbidden
@@ -298,18 +298,19 @@ let check_not_nested forbidden e =
       | Const _ -> ()
       | Ind _ -> ()
       | Construct _ -> ()
-      | Case(_,t,e,a) -> 
-	check_not_nested t;check_not_nested e;Array.iter check_not_nested a
+      | Case(_,t,i,e,a) ->
+	check_not_nested t;Array.iter check_not_nested i;
+        check_not_nested e;Array.iter (Option.iter check_not_nested) a
       | Fix _ -> error "check_not_nested : Fix"
       | CoFix _ -> error "check_not_nested : Fix"
   in
-  try 
-    check_not_nested e 
-  with UserError(_,p) -> 
+  try
+    check_not_nested e
+  with UserError(_,p) ->
     errorlabstrm "_" (str "on expr : " ++ Printer.pr_lconstr e ++ str " " ++ p)
 
 (* ['a info] contains the local information for travelling *)
-type 'a infos = 
+type 'a infos =
     { nb_arg : int; (* function number of arguments *)
       concl_tac : tactic; (* final tactic to finish proofs *)
       rec_arg_id : Id.t; (*name of the declared recursive argument *)
@@ -322,8 +323,8 @@ type 'a infos =
       info : 'a;
       is_main_branch : bool; (* on the main branch or on a matched expression *)
       is_final : bool; (* final first order term or not *)
-      values_and_bounds : (Id.t*Id.t) list; 
-      eqs : Id.t list; 
+      values_and_bounds : (Id.t*Id.t) list;
+      eqs : Id.t list;
       forbidden_ids : Id.t list;
       acc_inv : constr lazy_t;
       acc_id : Id.t;
@@ -331,91 +332,91 @@ type 'a infos =
     }
 
 
-type ('a,'b) journey_info_tac = 
+type ('a,'b) journey_info_tac =
     'a -> (* the arguments of the constructor *)
     'b infos -> (* infos of the caller *)
     ('b infos -> tactic) -> (* the continuation tactic of the caller *)
     'b infos -> (* argument of the tactic *)
     tactic
-       
+
 (* journey_info : specifies the actions to do on the different term constructors during the travelling of the term
 *)
-type journey_info = 
+type journey_info =
     { letiN : ((Name.t*constr*types*constr),constr) journey_info_tac;
       lambdA : ((Name.t*types*constr),constr) journey_info_tac;
-      casE : ((constr infos -> tactic) -> constr infos -> tactic) -> 
-	((case_info * constr * constr * constr array),constr) journey_info_tac;
+      casE : ((constr infos -> tactic) -> constr infos -> tactic) ->
+	((case_info * constr * constr array * constr * constr option array),constr) journey_info_tac;
       otherS : (unit,constr) journey_info_tac;
       apP : (constr*(constr list),constr) journey_info_tac;
       app_reC : (constr*(constr list),constr) journey_info_tac;
       message : string
     }
 
-	       
-
-let rec add_vars forbidden e = 
-  match kind_of_term e with 
-    | Var x -> x::forbidden 
-    | _ -> fold_constr add_vars forbidden e 
 
 
-let treat_case forbid_new_ids to_intros finalize_tac nb_lam e infos : tactic = 
-  fun g -> 
-    let rev_context,b = decompose_lam_n nb_lam e in 
-    let ids = List.fold_left (fun acc (na,_) -> 	
-      let pre_id = 
-	match na with 
-	  | Name x -> x 
-	  | Anonymous -> ano_id 
+let rec add_vars forbidden e =
+  match kind_of_term e with
+    | Var x -> x::forbidden
+    | _ -> fold_constr add_vars forbidden e
+
+
+let treat_case forbid_new_ids to_intros finalize_tac nb_lam e infos : tactic =
+  fun g ->
+    let rev_context,b = decompose_lam_n nb_lam e in
+    let ids = List.fold_left (fun acc (na,_) ->
+      let pre_id =
+	match na with
+	  | Name x -> x
+	  | Anonymous -> ano_id
       in
       pre_id::acc
-    ) [] rev_context in 
-    let rev_ids = pf_get_new_ids (List.rev ids) g in 
-    let new_b = substl (List.map mkVar rev_ids) b in 
-    tclTHENSEQ 
+    ) [] rev_context in
+    let rev_ids = pf_get_new_ids (List.rev ids) g in
+    let new_b = substl (List.map mkVar rev_ids) b in
+    tclTHENSEQ
       [
 	h_intros (List.rev rev_ids);
 	Proofview.V82.of_tactic (intro_using teq_id);
-	onLastHypId (fun heq -> 
+	onLastHypId (fun heq ->
 	  tclTHENSEQ[
 	    thin to_intros;
 	    h_intros to_intros;
-	    (fun g' -> 
+	    (fun g' ->
 	      let ty_teq = pf_type_of g' (mkVar heq) in
 	      let teq_lhs,teq_rhs =
 		let _,args = try destApp ty_teq with DestKO -> assert false in
 		args.(1),args.(2)
 	      in
-	      let new_b' = Termops.replace_term teq_lhs teq_rhs new_b in 
+	      let new_b' = Termops.replace_term teq_lhs teq_rhs new_b in
 	      let new_infos = {
-		infos with 
+		infos with
 		  info = new_b';
 		  eqs = heq::infos.eqs;
-		  forbidden_ids = 
-		  if forbid_new_ids 
+		  forbidden_ids =
+		  if forbid_new_ids
 		  then add_vars infos.forbidden_ids new_b'
 		  else infos.forbidden_ids
-	      } in 
-	      finalize_tac new_infos g' 
+	      } in
+	      finalize_tac new_infos g'
 	    )
 	  ]
 	)
       ] g
 
 let rec travel_aux jinfo continuation_tac (expr_info:constr infos) =
-  match kind_of_term expr_info.info with 
+  match kind_of_term expr_info.info with
     | CoFix _ | Fix _ -> error "Function cannot treat local fixpoint or cofixpoint"
     | Proj _ -> error "Function cannot treat projections"
-    | LetIn(na,b,t,e) -> 
+    | LetIn(na,b,t,e) ->
       begin
-	let new_continuation_tac = 
+	let new_continuation_tac =
 	  jinfo.letiN (na,b,t,e) expr_info continuation_tac
 	in
-	travel jinfo new_continuation_tac 
+	travel jinfo new_continuation_tac
 	  {expr_info with info = b; is_final=false}
       end
     | Rel _ -> anomaly (Pp.str "Free var in goal conclusion !")
-    | Prod _ -> 
+    | Prod _ ->
       begin
 	try
 	  check_not_nested (expr_info.f_id::expr_info.forbidden_ids) expr_info.info;
@@ -423,7 +424,7 @@ let rec travel_aux jinfo continuation_tac (expr_info:constr infos) =
 	with e when Errors.noncritical e ->
 	  errorlabstrm "Recdef.travel" (str "the term " ++ Printer.pr_lconstr expr_info.info ++ str " can not contain a recursive call to " ++ pr_id expr_info.f_id)
       end
-    | Lambda(n,t,b) -> 
+    | Lambda(n,t,b) ->
       begin
 	try
 	  check_not_nested (expr_info.f_id::expr_info.forbidden_ids) expr_info.info;
@@ -431,61 +432,61 @@ let rec travel_aux jinfo continuation_tac (expr_info:constr infos) =
 	with e when Errors.noncritical e ->
 	  errorlabstrm "Recdef.travel" (str "the term " ++ Printer.pr_lconstr expr_info.info ++ str " can not contain a recursive call to " ++ pr_id expr_info.f_id)
       end
-    | Case(ci,t,a,l) -> 
+    | Case(ci,t,i,a,l) ->
       begin
-	let continuation_tac_a = 
-	  jinfo.casE 
-	    (travel jinfo) (ci,t,a,l) 
-	    expr_info continuation_tac in 
-	travel 
-	  jinfo continuation_tac_a 
-	  {expr_info with info = a; is_main_branch = false; 
+	let continuation_tac_a =
+	  jinfo.casE
+	    (travel jinfo) (ci,t,i,a,l)
+	    expr_info continuation_tac in
+	travel
+	  jinfo continuation_tac_a
+	  {expr_info with info = a; is_main_branch = false;
 	    is_final = false}
       end
-    | App _ -> 
-      let f,args = decompose_app expr_info.info in 
-      if eq_constr f (expr_info.f_constr) 
-      then jinfo.app_reC (f,args) expr_info continuation_tac expr_info 
+    | App _ ->
+      let f,args = decompose_app expr_info.info in
+      if eq_constr f (expr_info.f_constr)
+      then jinfo.app_reC (f,args) expr_info continuation_tac expr_info
       else
       begin
-	match kind_of_term f with 
+	match kind_of_term f with
 	  | App _ -> assert false (* f is coming from a decompose_app *)
-	  | Const _ | Construct _ | Rel _ | Evar _ | Meta _  | Ind _ 
-	  | Sort _ | Prod _ | Var _ -> 
-	    let new_infos = {expr_info with info=(f,args)} in 
-	    let new_continuation_tac = 
-	      jinfo.apP (f,args) expr_info continuation_tac in 
+	  | Const _ | Construct _ | Rel _ | Evar _ | Meta _  | Ind _
+	  | Sort _ | Prod _ | Var _ ->
+	    let new_infos = {expr_info with info=(f,args)} in
+	    let new_continuation_tac =
+	      jinfo.apP (f,args) expr_info continuation_tac in
 	    travel_args jinfo
 	      expr_info.is_main_branch new_continuation_tac new_infos
-	  | _ -> assert false 
+	  | _ -> assert false
       end
     | Cast(t,_,_) -> travel jinfo continuation_tac {expr_info with info=t}
     | Const _ | Var _ | Meta _ | Evar _ | Sort _ | Construct _ | Ind _ ->
-      let new_continuation_tac = 
+      let new_continuation_tac =
 	jinfo.otherS () expr_info continuation_tac in
       new_continuation_tac expr_info
-and travel_args jinfo is_final continuation_tac infos = 
-  let (f_args',args) = infos.info in 
-  match args with 
-    | [] -> 
+and travel_args jinfo is_final continuation_tac infos =
+  let (f_args',args) = infos.info in
+  match args with
+    | [] ->
       continuation_tac {infos with info = f_args'; is_final = is_final}
-    | arg::args' -> 
-      let new_continuation_tac new_infos = 
-	let new_arg = new_infos.info in 
+    | arg::args' ->
+      let new_continuation_tac new_infos =
+	let new_arg = new_infos.info in
 	travel_args jinfo is_final
 	  continuation_tac
 	  {new_infos with info = (mkApp(f_args',[|new_arg|]),args')}
       in
-      travel jinfo new_continuation_tac 
-	{infos with info=arg;is_final=false} 
-and travel jinfo continuation_tac expr_info = 
-  observe_tac 
-    (str jinfo.message ++ Printer.pr_lconstr expr_info.info) 
+      travel jinfo new_continuation_tac
+	{infos with info=arg;is_final=false}
+and travel jinfo continuation_tac expr_info =
+  observe_tac
+    (str jinfo.message ++ Printer.pr_lconstr expr_info.info)
     (travel_aux jinfo continuation_tac expr_info)
 
-(* Termination proof *) 
+(* Termination proof *)
 
-let rec prove_lt hyple g = 
+let rec prove_lt hyple g =
   begin
     try
       let (varx,varz) = match decompose_app (pf_concl g) with
@@ -505,7 +506,7 @@ let rec prove_lt hyple g =
 	apply (mkApp(le_lt_trans (),[|varx;y;varz;mkVar h|]));
 	observe_tac (str "prove_lt") (prove_lt hyple)
       ]
-    with Not_found -> 
+    with Not_found ->
       (
 	(
 	  tclTHENLIST[
@@ -516,11 +517,11 @@ let rec prove_lt hyple g =
   end
     g
 
-let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g = 
-  match lbounds with 
-    | [] -> 
-      let ids = pf_ids_of_hyps g in 
-      let s_max = mkApp(delayed_force coq_S, [|bound|]) in 
+let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
+  match lbounds with
+    | [] ->
+      let ids = pf_ids_of_hyps g in
+      let s_max = mkApp(delayed_force coq_S, [|bound|]) in
       let k = next_ident_away_in_goal k_id ids in
       let ids = k::ids in
       let h' = next_ident_away_in_goal (h'_id) ids in
@@ -529,9 +530,9 @@ let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
       tclTHENLIST[
 	Proofview.V82.of_tactic (split (ImplicitBindings [s_max]));
 	Proofview.V82.of_tactic (intro_then
-	  (fun id -> 
+	  (fun id ->
             Proofview.V82.tactic begin
-	    observe_tac (str "destruct_bounds_aux") 
+	    observe_tac (str "destruct_bounds_aux")
 	      (tclTHENS (Proofview.V82.of_tactic (simplest_case (mkVar id)))
 		 [
 		   tclTHENLIST[Proofview.V82.of_tactic (intro_using h_id);
@@ -547,7 +548,7 @@ let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
 		     observe_tac (str "test" ) (
 		       tclTHENLIST[
 			 list_rewrite true
-			   (List.fold_right 
+			   (List.fold_right
 			      (fun e acc -> (mkVar e,true)::acc)
 			      infos.eqs
 			      (List.map (fun e -> (e,true)) rechyps)
@@ -555,8 +556,8 @@ let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
 		      (* list_rewrite true *)
 		      (*   (List.map (fun e -> (mkVar e,true)) infos.eqs) *)
 		      (*   ; *)
-			 
-			 (observe_tac (str "finishing") 
+
+			 (observe_tac (str "finishing")
 			    (tclORELSE
 			       (Proofview.V82.of_tactic intros_reflexivity)
 			       (observe_tac (str "calling prove_lt") (prove_lt hyple))))])
@@ -564,26 +565,26 @@ let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
 	      ]
 	      )end))
 	  ] g
-      | (_,v_bound)::l -> 
+      | (_,v_bound)::l ->
       tclTHENLIST[
 	Proofview.V82.of_tactic (simplest_elim (mkVar v_bound));
 	clear [v_bound];
 	tclDO 2 (Proofview.V82.of_tactic intro);
-	onNthHypId 1 
-	  (fun p_hyp -> 
-	    (onNthHypId 2 
-	       (fun p ->  
+	onNthHypId 1
+	  (fun p_hyp ->
+	    (onNthHypId 2
+	       (fun p ->
 		 tclTHENLIST[
-		   Proofview.V82.of_tactic (simplest_elim 
+		   Proofview.V82.of_tactic (simplest_elim
 		     (mkApp(delayed_force max_constr, [| bound; mkVar p|])));
 		   tclDO 3 (Proofview.V82.of_tactic intro);
-		   onNLastHypsId 3 (fun lids -> 
+		   onNLastHypsId 3 (fun lids ->
 		     match lids with
-		       [hle2;hle1;pmax] -> 
-			 destruct_bounds_aux infos 
+		       [hle2;hle1;pmax] ->
+			 destruct_bounds_aux infos
 			   ((mkVar pmax),
-			    hle1::hle2::hyple,(mkVar p_hyp)::rechyps) 
-			   l 
+			    hle1::hle2::hyple,(mkVar p_hyp)::rechyps)
+			   l
 		       | _ -> assert false) ;
 		 ]
 	       )
@@ -591,50 +592,50 @@ let rec destruct_bounds_aux infos (bound,hyple,rechyps) lbounds g =
 	  )
       ] g
 
-let destruct_bounds infos = 
+let destruct_bounds infos =
   destruct_bounds_aux infos (delayed_force coq_O,[],[]) infos.values_and_bounds
 
-let terminate_app f_and_args expr_info continuation_tac infos = 
-    if expr_info.is_final && expr_info.is_main_branch 
-    then 
+let terminate_app f_and_args expr_info continuation_tac infos =
+    if expr_info.is_final && expr_info.is_main_branch
+    then
       tclTHENLIST[
 	continuation_tac infos;
-	observe_tac (str "first split") 
+	observe_tac (str "first split")
 	  (Proofview.V82.of_tactic (split (ImplicitBindings [infos.info])));
 	observe_tac (str "destruct_bounds (1)") (destruct_bounds infos)
       ]
     else continuation_tac infos
 
-let terminate_others _ expr_info continuation_tac infos = 
-  if expr_info.is_final && expr_info.is_main_branch 
-  then 
+let terminate_others _ expr_info continuation_tac infos =
+  if expr_info.is_final && expr_info.is_main_branch
+  then
     tclTHENLIST[
 	    continuation_tac infos;
-      observe_tac (str "first split") 
+      observe_tac (str "first split")
 	(Proofview.V82.of_tactic (split (ImplicitBindings [infos.info])));
       observe_tac (str "destruct_bounds") (destruct_bounds infos)
     ]
   else continuation_tac infos
 
-let terminate_letin (na,b,t,e) expr_info continuation_tac info = 
-  let new_e = subst1 info.info e in 
-  let new_forbidden = 
-    let forbid = 
-      try 
+let terminate_letin (na,b,t,e) expr_info continuation_tac info =
+  let new_e = subst1 info.info e in
+  let new_forbidden =
+    let forbid =
+      try
 	check_not_nested (expr_info.f_id::expr_info.forbidden_ids) b;
 	true
       with e when Errors.noncritical e -> false
     in
-    if forbid 
-    then 
+    if forbid
+    then
       match na with
 	| Anonymous -> info.forbidden_ids
 	| Name id -> id::info.forbidden_ids
-    else info.forbidden_ids 
+    else info.forbidden_ids
   in
-  continuation_tac {info with info = new_e; forbidden_ids = new_forbidden} 
+  continuation_tac {info with info = new_e; forbidden_ids = new_forbidden}
 
-let pf_type c tac gl = 
+let pf_type c tac gl =
   let evars, ty = Typing.e_type_of (pf_env gl) (project gl) c in
     tclTHEN (Refiner.tclEVARS evars) (tac ty) gl
 
@@ -668,12 +669,13 @@ let mkDestructEq :
      [Simple.generalize new_hyps;
       (fun g2 ->
 	change_in_concl None
-	  (fun env sigma -> 
+	  (fun env sigma ->
 	    sigma, pattern_occs [Locus.AllOccurrencesBut [1], expr] (pf_env g2) Evd.empty (pf_concl g2)) g2);
       Proofview.V82.of_tactic (simplest_case expr)]), to_revert
 
 
-let terminate_case next_step (ci,a,t,l) expr_info continuation_tac infos g =
+let terminate_case next_step (ci,a,i,t,l) expr_info continuation_tac infos g =
+  (* TODO: check indices -jls *)
   let b =
     try
       check_not_nested (expr_info.f_id::expr_info.forbidden_ids) a;
@@ -684,75 +686,76 @@ let terminate_case next_step (ci,a,t,l) expr_info continuation_tac infos g =
   let a' = infos.info in
   let new_info =
     {infos with
-      info = mkCase(ci,t,a',l);
+      info = mkCase(ci,t,[||],a',l); (* TODO: check indices -jls *)
       is_main_branch = expr_info.is_main_branch;
       is_final = expr_info.is_final} in
-  let destruct_tac,rev_to_thin_intro = 
-    mkDestructEq [expr_info.rec_arg_id] a' g in 
-  let to_thin_intro = List.rev rev_to_thin_intro in 
-  observe_tac (str "treating case " ++ int (Array.length l) ++ spc () ++ Printer.pr_lconstr a') 
+  let destruct_tac,rev_to_thin_intro =
+    mkDestructEq [expr_info.rec_arg_id] a' g in
+  let to_thin_intro = List.rev rev_to_thin_intro in
+  observe_tac (str "treating case " ++ int (Array.length l) ++ spc () ++ Printer.pr_lconstr a')
     (try
       (tclTHENS
 	 destruct_tac
-	 (List.map_i (fun i e -> observe_tac (str "do treat case") (treat_case b to_thin_intro (next_step continuation_tac) ci.ci_cstr_ndecls.(i) e new_info)) 0 (Array.to_list l)
+	 (List.map_i (fun i e -> observe_tac (str "do treat case") (treat_case b to_thin_intro (next_step continuation_tac) ci.ci_cstr_ndecls.(i) e new_info)) 0 (List.map Option.get (List.filter Option.has_some (Array.to_list l)))
+         (* TODO: check removing of impossible branches -jls *)
 	 ))
-    with 
-      | UserError("Refiner.thensn_tac3",_) 
+    with
+      | UserError("Refiner.thensn_tac3",_)
       | UserError("Refiner.tclFAIL_s",_) ->
 	(observe_tac (str "is computable " ++ Printer.pr_lconstr new_info.info) (next_step continuation_tac {new_info with info = nf_betaiotazeta new_info.info} )
 	))
     g
-    
-let terminate_app_rec (f,args) expr_info continuation_tac _ = 
+
+let terminate_app_rec (f,args) expr_info continuation_tac _ =
   List.iter (check_not_nested (expr_info.f_id::expr_info.forbidden_ids))
     args;
   begin
-    try 
+    try
       let v = List.assoc_f (List.equal Constr.equal) args expr_info.args_assoc in
-      let new_infos = {expr_info with info = v} in 
+      let new_infos = {expr_info with info = v} in
       tclTHENLIST[
 	continuation_tac new_infos;
-	if expr_info.is_final && expr_info.is_main_branch 
+	if expr_info.is_final && expr_info.is_main_branch
 	then
-	  tclTHENLIST[ 
+	  tclTHENLIST[
 	    observe_tac (str "first split")
 	      (Proofview.V82.of_tactic (split (ImplicitBindings [new_infos.info])));
 	    observe_tac (str "destruct_bounds (3)")
 	      (destruct_bounds new_infos)
 	  ]
 	else
-	  tclIDTAC			       
-      ]    
-    with Not_found -> 
+	  tclIDTAC
+      ]
+    with Not_found ->
       observe_tac (str "terminate_app_rec not found") (tclTHENS
 	(Proofview.V82.of_tactic (simplest_elim (mkApp(mkVar expr_info.ih,Array.of_list args))))
-	[		
+	[
 	  tclTHENLIST[
 	    Proofview.V82.of_tactic (intro_using rec_res_id);
 	    Proofview.V82.of_tactic intro;
-	    onNthHypId 1 
-	      (fun v_bound -> 
-		(onNthHypId 2 
-		   (fun v ->  
-		     let new_infos = { expr_info with 
-		       info = (mkVar v); 
-		       values_and_bounds = 
-			 (v,v_bound)::expr_info.values_and_bounds; 
+	    onNthHypId 1
+	      (fun v_bound ->
+		(onNthHypId 2
+		   (fun v ->
+		     let new_infos = { expr_info with
+		       info = (mkVar v);
+		       values_and_bounds =
+			 (v,v_bound)::expr_info.values_and_bounds;
 		       args_assoc=(args,mkVar v)::expr_info.args_assoc
 		     } in
 		     tclTHENLIST[
 		       continuation_tac new_infos;
-		       if expr_info.is_final && expr_info.is_main_branch 
+		       if expr_info.is_final && expr_info.is_main_branch
 		       then
-			 tclTHENLIST[ 
-			   observe_tac (str "first split") 
+			 tclTHENLIST[
+			   observe_tac (str "first split")
 			     (Proofview.V82.of_tactic (split (ImplicitBindings [new_infos.info])));
-			   observe_tac (str "destruct_bounds (2)") 
+			   observe_tac (str "destruct_bounds (2)")
 			     (destruct_bounds new_infos)
 			 ]
 		       else
-			 tclIDTAC			       
-		     ]    
+			 tclIDTAC
+		     ]
 		   )
 		)
 	      )
@@ -760,20 +763,20 @@ let terminate_app_rec (f,args) expr_info continuation_tac _ =
 	  observe_tac (str "proving decreasing") (
 	    tclTHENS (* proof of args < formal args *)
 	      (apply (Lazy.force expr_info.acc_inv))
-	      [ 
+	      [
 		observe_tac (str "assumption") (Proofview.V82.of_tactic assumption);
 		tclTHENLIST
 		  [
-		    tclTRY(list_rewrite true 
-			     (List.map 
-				(fun e -> mkVar e,true) 
+		    tclTRY(list_rewrite true
+			     (List.map
+				(fun e -> mkVar e,true)
 				expr_info.eqs
 			     )
 		    );
-		    tclUSER expr_info.concl_tac true 
+		    tclUSER expr_info.concl_tac true
 		      (Some (
 		      expr_info.ih::expr_info.acc_id::
-			(fun (x,y) -> y) 
+			(fun (x,y) -> y)
 			(List.split expr_info.values_and_bounds)
 		       )
 		      );
@@ -782,7 +785,7 @@ let terminate_app_rec (f,args) expr_info continuation_tac _ =
 	])
   end
 
-let terminate_info = 
+let terminate_info =
   { message = "prove_terminate with term ";
     letiN = terminate_letin;
     lambdA = (fun _ _ _ _ -> assert false);
@@ -797,43 +800,44 @@ let prove_terminate = travel terminate_info
 
 (* Equation proof *)
 
-let equation_case next_step (ci,a,t,l) expr_info continuation_tac infos = 
-  terminate_case next_step (ci,a,t,l) expr_info continuation_tac infos
+let equation_case next_step (ci,a,i,t,l) expr_info continuation_tac infos =
+  terminate_case next_step (ci,a,i,t,l) expr_info continuation_tac infos
+  (* TODO: implement terminate_case -jls *)
 
-let rec prove_le g = 
-  let x,z = 
-    let _,args = decompose_app (pf_concl g) in 
+let rec prove_le g =
+  let x,z =
+    let _,args = decompose_app (pf_concl g) in
     (List.hd args,List.hd (List.tl args))
-  in 
+  in
   tclFIRST[
     Proofview.V82.of_tactic assumption;
     apply (delayed_force le_n);
     begin
       try
-	let matching_fun = 
+	let matching_fun =
 	  pf_is_matching g
-	    (Pattern.PApp(Pattern.PRef (reference_of_constr (le ())),[|Pattern.PVar (destVar x);Pattern.PMeta None|])) in 
+	    (Pattern.PApp(Pattern.PRef (reference_of_constr (le ())),[|Pattern.PVar (destVar x);Pattern.PMeta None|])) in
 	let (h,t) = List.find (fun (_,t) -> matching_fun t) (pf_hyps_types g)
-	in 
-	let y = 
-	  let _,args = decompose_app t in 
+	in
+	let y =
+	  let _,args = decompose_app t in
 	  List.hd (List.tl args)
-	in 
+	in
 	tclTHENLIST[
 	  apply(mkApp(le_trans (),[|x;y;z;mkVar h|]));
 	  observe_tac (str "prove_le (rec)") (prove_le)
-	] 
+	]
       with Not_found -> tclFAIL 0 (mt())
     end;
   ]
     g
 
-let rec make_rewrite_list expr_info max = function 
+let rec make_rewrite_list expr_info max = function
   | [] -> tclIDTAC
-  | (_,p,hp)::l -> 
+  | (_,p,hp)::l ->
     observe_tac (str "make_rewrite_list") (tclTHENS
       (observe_tac (str "rewrite heq on " ++ pr_id p ) (
-	(fun g -> 
+	(fun g ->
 	  let t_eq = compute_renamed_type g (mkVar hp) in
 	  let k,def =
 	    let k_na,_,t = destProd t_eq in
@@ -842,7 +846,7 @@ let rec make_rewrite_list expr_info max = function
 	    Nameops.out_name k_na,Nameops.out_name def_na
 	  in
 	  Proofview.V82.of_tactic (general_rewrite_bindings false Locus.AllOccurrences
-	    true (* dep proofs also: *) true 
+	    true (* dep proofs also: *) true
 	    (mkVar hp,
 	     ExplicitBindings[Loc.ghost,NamedHyp def,
 			      expr_info.f_constr;Loc.ghost,NamedHyp k,
@@ -855,11 +859,11 @@ let rec make_rewrite_list expr_info max = function
        ]
       ] )
 
-let make_rewrite expr_info l hp max = 
+let make_rewrite expr_info l hp max =
   tclTHENFIRST
     (observe_tac (str "make_rewrite") (make_rewrite_list expr_info max l))
     (observe_tac (str "make_rewrite") (tclTHENS
-       (fun g -> 
+       (fun g ->
 	  let t_eq = compute_renamed_type g (mkVar hp) in
 	  let k,def =
 	    let k_na,_,t = destProd t_eq in
@@ -869,7 +873,7 @@ let make_rewrite expr_info l hp max =
 	  in
 	 observe_tac (str "general_rewrite_bindings")
 	   (Proofview.V82.of_tactic (general_rewrite_bindings false Locus.AllOccurrences
-	    true (* dep proofs also: *) true 
+	    true (* dep proofs also: *) true
 	    (mkVar hp,
 	     ExplicitBindings[Loc.ghost,NamedHyp def,
 			      expr_info.f_constr;Loc.ghost,NamedHyp k,
@@ -881,8 +885,8 @@ let make_rewrite expr_info l hp max =
 	   observe_tac (str "unfold functional")
 	     (unfold_in_concl[(Locus.OnlyOccurrences [1],
 			       evaluable_of_global_reference expr_info.func)]);
-	   
-	   (list_rewrite true 
+
+	   (list_rewrite true
 	      (List.map (fun e -> mkVar e,true) expr_info.eqs));
 	   (observe_tac (str "h_reflexivity") (Proofview.V82.of_tactic intros_reflexivity))]))
        ;
@@ -890,51 +894,51 @@ let make_rewrite expr_info l hp max =
 	 apply (delayed_force le_lt_SS);
 	 observe_tac (str "prove_le (3)") prove_le
 	 ]
-       ])  
+       ])
     )
 
-let rec compute_max rew_tac max l = 
-  match l with 
+let rec compute_max rew_tac max l =
+  match l with
     | [] -> rew_tac max
-    | (_,p,_)::l -> 
+    | (_,p,_)::l ->
       tclTHENLIST[
-	Proofview.V82.of_tactic (simplest_elim 
+	Proofview.V82.of_tactic (simplest_elim
 	  (mkApp(delayed_force max_constr, [| max; mkVar p|])));
 	tclDO 3 (Proofview.V82.of_tactic intro);
-	onNLastHypsId 3 (fun lids -> 
+	onNLastHypsId 3 (fun lids ->
 	  match lids with
-	    | [hle2;hle1;pmax] -> compute_max rew_tac (mkVar pmax) l 
+	    | [hle2;hle1;pmax] -> compute_max rew_tac (mkVar pmax) l
 	    | _ -> assert false
 	)]
 
-let rec destruct_hex expr_info acc l = 
-  match l with 
-    | [] -> 
+let rec destruct_hex expr_info acc l =
+  match l with
+    | [] ->
       begin
-	match List.rev acc with 
-	  | [] -> tclIDTAC 
-	  | (_,p,hp)::tl  -> 
+	match List.rev acc with
+	  | [] -> tclIDTAC
+	  | (_,p,hp)::tl  ->
 	    observe_tac (str "compute max ") (compute_max (make_rewrite expr_info tl hp) (mkVar p) tl)
       end
-    | (v,hex)::l -> 
+    | (v,hex)::l ->
       tclTHENLIST[
 	Proofview.V82.of_tactic (simplest_case (mkVar hex));
 	clear [hex];
 	tclDO 2 (Proofview.V82.of_tactic intro);
-	onNthHypId 1 (fun hp -> 
-	  onNthHypId 2 (fun p -> 
-	    observe_tac 
+	onNthHypId 1 (fun hp ->
+	  onNthHypId 2 (fun p ->
+	    observe_tac
 	      (str "destruct_hex after " ++ pr_id hp ++ spc () ++ pr_id p)
 	      (destruct_hex expr_info ((v,p,hp)::acc) l)
 	  )
 	)
       ]
-	
-let rec intros_values_eq expr_info acc = 
+
+let rec intros_values_eq expr_info acc =
   tclORELSE(
     tclTHENLIST[
       tclDO 2 (Proofview.V82.of_tactic intro);
-      onNthHypId 1 (fun hex -> 
+      onNthHypId 1 (fun hex ->
 	(onNthHypId 2 (fun v -> intros_values_eq expr_info ((v,hex)::acc)))
       )
     ])
@@ -942,41 +946,41 @@ let rec intros_values_eq expr_info acc =
       destruct_hex expr_info [] acc
     ))
 
-let equation_others _ expr_info continuation_tac infos = 
-  if expr_info.is_final && expr_info.is_main_branch 
-  then 
-    tclTHEN 
-      (continuation_tac infos) 
+let equation_others _ expr_info continuation_tac infos =
+  if expr_info.is_final && expr_info.is_main_branch
+  then
+    tclTHEN
+      (continuation_tac infos)
       (intros_values_eq expr_info [])
   else continuation_tac infos
 
-let equation_app f_and_args expr_info continuation_tac infos = 
-    if expr_info.is_final && expr_info.is_main_branch 
+let equation_app f_and_args expr_info continuation_tac infos =
+    if expr_info.is_final && expr_info.is_main_branch
     then intros_values_eq expr_info []
     else continuation_tac infos
-	    
-let equation_app_rec (f,args) expr_info continuation_tac info = 
+
+let equation_app_rec (f,args) expr_info continuation_tac info =
   begin
     try
       let v = List.assoc_f (List.equal Constr.equal) args expr_info.args_assoc in
       let new_infos = {expr_info with info = v} in
       observe_tac (str "app_rec found") (continuation_tac new_infos)
     with Not_found ->
-      if expr_info.is_final && expr_info.is_main_branch 
-      then 
+      if expr_info.is_final && expr_info.is_main_branch
+      then
 	tclTHENLIST
 	  [ Proofview.V82.of_tactic (simplest_case (mkApp (expr_info.f_terminate,Array.of_list args)));
 	    continuation_tac {expr_info with args_assoc = (args,delayed_force coq_O)::expr_info.args_assoc};
 	    observe_tac (str "app_rec intros_values_eq") (intros_values_eq expr_info [])
 	  ]
-      else 
+      else
 	tclTHENLIST[
   	  Proofview.V82.of_tactic (simplest_case (mkApp (expr_info.f_terminate,Array.of_list args)));
 	  observe_tac (str "app_rec not_found") (continuation_tac {expr_info with args_assoc = (args,delayed_force coq_O)::expr_info.args_assoc})
 	]
   end
 
-let equation_info = 
+let equation_info =
   {message = "prove_equation with term ";
    letiN = (fun _ -> assert false);
    lambdA = (fun _ _ _ _ -> assert false);
@@ -985,7 +989,7 @@ let equation_info =
    apP = equation_app;
    app_reC = equation_app_rec
 }
-    
+
 let prove_eq = travel equation_info
 
 (* wrappers *)
@@ -1141,8 +1145,8 @@ let whole_start (concl_tac:tactic) nb_args is_mes func input_type relation rec_a
 	relation
 	rec_arg_num
 	rec_arg_id
-	(fun rec_arg_id hrec acc_id acc_inv g -> 	      
-	  (prove_terminate (fun infos -> tclIDTAC) 
+	(fun rec_arg_id hrec acc_id acc_inv g ->
+	  (prove_terminate (fun infos -> tclIDTAC)
 	     { is_main_branch = true; (* we are on the main branche (i.e. still on a match ... with .... end *)
 	       is_final = true;      (* and on leaf (more or less) *)
 	       f_terminate = delayed_force coq_O;
@@ -1162,7 +1166,7 @@ let whole_start (concl_tac:tactic) nb_args is_mes func input_type relation rec_a
 	       forbidden_ids = [];
 	       args_assoc = []
 	     }
-	  ) 
+	  )
 	     g
 	)
 	(tclUSER_if_not_mes concl_tac)
@@ -1179,21 +1183,21 @@ let build_and_l l =
   let conj_constr = coq_conj () in
   let mk_and p1 p2 =
     Term.mkApp(and_constr,[|p1;p2|]) in
-  let rec is_well_founded t = 
-    match kind_of_term t with 
+  let rec is_well_founded t =
+    match kind_of_term t with
       | Prod(_,_,t') -> is_well_founded t'
-      | App(_,_) -> 
-	let (f,_) = decompose_app t in 
+      | App(_,_) ->
+	let (f,_) = decompose_app t in
 	eq_constr f (well_founded ())
-      | _ -> 
+      | _ ->
 	false
   in
-  let compare t1 t2 = 
-    let b1,b2= is_well_founded t1,is_well_founded t2 in 
+  let compare t1 t2 =
+    let b1,b2= is_well_founded t1,is_well_founded t2 in
     if (b1&&b2) || not (b1 || b2) then 0
     else if b1 && not b2 then 1 else -1
   in
-  let l = List.sort compare l in 
+  let l = List.sort compare l in
   let rec f  = function
     | [] -> failwith "empty list of subgoals!"
     | [p] -> p,tclIDTAC,1
@@ -1214,7 +1218,7 @@ let is_rec_res id =
   try
     String.equal (String.sub id_name 0 (String.length rec_res_name)) rec_res_name
   with Invalid_argument _ -> false
- 
+
 let clear_goals =
   let rec clear_goal t =
     match kind_of_term t with
@@ -1323,7 +1327,7 @@ let open_new_goal build_proof ctx using_lemmas ref_ goal_name (gls_type,decompos
   if Indfun_common.is_strict_tcc  ()
   then
     ignore (by (Proofview.V82.tactic (tclIDTAC)))
-  else 
+  else
     begin
       ignore (by (Proofview.V82.tactic begin
 	fun g ->
@@ -1422,8 +1426,8 @@ let (com_eqn : int -> Id.t ->
 	  (fun  x ->
 	     prove_eq (fun _ -> tclIDTAC)
 	       {nb_arg=nb_arg;
-		f_terminate = constr_of_global terminate_ref; 
-	        f_constr = f_constr; 
+		f_terminate = constr_of_global terminate_ref;
+	        f_constr = f_constr;
 		concl_tac = tclIDTAC;
 		func=functional_ref;
 		info=(instantiate_lambda
@@ -1444,10 +1448,10 @@ let (com_eqn : int -> Id.t ->
 		ih = Id.of_string "______";
 	       }
 	  )
-       ))); 
+       )));
      (* (try Vernacentries.interp (Vernacexpr.VernacShow Vernacexpr.ShowProof) with _ -> ()); *)
 (*      Vernacentries.interp (Vernacexpr.VernacShow Vernacexpr.ShowScript); *)
-     Flags.silently (fun () -> Lemmas.save_proof (Vernacexpr.Proved(opacity,None))) () ; 
+     Flags.silently (fun () -> Lemmas.save_proof (Vernacexpr.Proved(opacity,None))) () ;
 (*      Pp.msgnl (str "eqn finished"); *)
     );;
 
@@ -1484,7 +1488,7 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   let term_id = add_suffix function_name "_terminate" in
   let ctx = Evd.evar_universe_context evm in
   let functional_ref = declare_fun functional_id (IsDefinition Decl_kinds.Definition) ~ctx:(Evd.universe_context evm) res in
-  let env_with_pre_rec_args = push_rel_context(List.map (function (x,t) -> (x,None,t)) pre_rec_args) env in  
+  let env_with_pre_rec_args = push_rel_context(List.map (function (x,t) -> (x,None,t)) pre_rec_args) env in
   let relation =
     fst (*FIXME*)(interp_constr
       Evd.empty
@@ -1494,12 +1498,12 @@ let recursive_definition is_mes function_name rec_impls type_of_f r rec_arg_num 
   let tcc_lemma_name = add_suffix function_name "_tcc" in
   let tcc_lemma_constr = ref None in
   (* let _ = Pp.msgnl (str "relation := " ++ Printer.pr_lconstr_env env_with_pre_rec_args relation) in *)
-  let hook _ _ = 
+  let hook _ _ =
     let term_ref = Nametab.locate (qualid_of_ident term_id) in
     let f_ref = declare_f function_name (IsProof Lemma) arg_types term_ref in
-    let _ = Table.extraction_inline true [Ident (Loc.ghost,term_id)] in 
+    let _ = Table.extraction_inline true [Ident (Loc.ghost,term_id)] in
     (*     message "start second proof"; *)
-    let stop = 
+    let stop =
       try com_eqn (List.length res_vars) equation_id functional_ref f_ref term_ref (subst_var function_name equation_lemma_type);
 	  false
       with e when Errors.noncritical e ->

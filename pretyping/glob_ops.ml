@@ -20,8 +20,8 @@ let cases_pattern_loc = function
 
 let cases_predicate_names tml =
   List.flatten (List.map (function
-    | (tm,(na,None)) -> [na]
-    | (tm,(na,Some (_,_,nal))) -> na::nal) tml)
+    | (tm,(na,None,_)) -> [na]
+    | (tm,(na,Some (_,_,nal),_)) -> na::nal) tml) (* ignore indices for now -jls *)
 
 let mkGApp loc p t =
   match p with
@@ -106,8 +106,14 @@ and tomatch_tuple_eq (c1, p1) (c2, p2) =
   let eqp (_, i1, na1) (_, i2, na2) =
     eq_ind i1 i2 && List.equal Name.equal na1 na2
   in
-  let eq_pred (n1, o1) (n2, o2) = Name.equal n1 n2 && Option.equal eqp o1 o2 in
+  let eq_pred (n1, o1, i1) (n2, o2, i2) =
+    Name.equal n1 n2 && Option.equal eqp o1 o2 &&
+      Option.equal (List.equal index_definition_eq) i1 i2
+  in
   glob_constr_eq c1 c2 && eq_pred p1 p2
+
+and index_definition_eq (x1, c1) (x2, c2) =
+  Name.equal x1 x2 && glob_constr_eq c1 c2
 
 and cases_clause_eq (_, id1, p1, c1) (_, id2, p2, c2) =
   List.equal Id.equal id1 id2 && List.equal cases_pattern_eq p1 p2 &&
@@ -123,7 +129,7 @@ and fix_kind_eq k1 k2 = match k1, k2 with
   let eq (i1, o1) (i2, o2) =
     Option.equal Int.equal i1 i2 && fix_recursion_order_eq o1 o2
   in
-  Int.equal i1 i2 && Array.equal eq a1 a1
+  Int.equal i1 i2 && Array.equal eq a1 a2
 | GCoFix i1, GCoFix i2 -> Int.equal i1 i2
 | _ -> false
 
@@ -156,7 +162,7 @@ let map_glob_constr_left_to_right f = function
       let comp2 = Util.List.map_left (fun (tm,x) -> (f tm,x)) tml in
       let comp3 = Util.List.map_left (fun (loc,idl,p,c) -> (loc,idl,p,f c)) pl in
       GCases (loc,sty,comp1,comp2,comp3)
-  | GProj (loc,p,c) -> 
+  | GProj (loc,p,c) ->
       let comp1 = f c in
       GProj (loc,p,comp1)
   | GLetTuple (loc,nal,(na,po),b,c) ->

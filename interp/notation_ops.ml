@@ -89,6 +89,7 @@ let glob_constr_of_notation_constr_with_binders loc g f e = function
 	let ((idl,e),patl) =
 	  List.fold_map (cases_pattern_fold_map loc fold) ([],e) patl in
 	(loc,idl,patl,f e rhs)) eqnl in
+      let tml' = List.map (fun (x,(y,z)) -> x,(y,z,None)) tml' in (* TODO: empty indices are ok here? -jls *)
       GCases (loc,sty,Option.map (f e') rtntypopt,tml',eqnl')
   | NLetTuple (nal,(na,po),b,c) ->
       let e',nal = List.fold_map g e nal in
@@ -266,6 +267,7 @@ let notation_constr_and_vars_of_glob_constr a =
   | GProd (_,na,bk,ty,c) -> add_name found na; NProd (na,aux ty,aux c)
   | GLetIn (_,na,b,c) -> add_name found na; NLetIn (na,aux b,aux c)
   | GCases (_,sty,rtntypopt,tml,eqnl) ->
+    let tml = List.map (fun (x,(y,z,_)) -> x,(y,z)) tml in (* TODO: removing indices. Probably we do not need indices in NCases. Check -jls *)
       let f (_,idl,pat,rhs) = List.iter (add_id found) idl; (pat,aux rhs) in
       NCases (sty,Option.map aux rtntypopt,
         List.map (fun (tm,(na,x)) ->
@@ -669,7 +671,7 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
   | GVar (_,id1), NVar id2 when alpha_var id1 id2 alp -> sigma
   | GRef (_,r1,_), NRef r2 when (eq_gr r1 r2) -> sigma
   | GPatVar (_,(_,n1)), NPatVar n2 when Id.equal n1 n2 -> sigma
-  | GProj (loc,f1,c1), NProj (f2,c2) when Constant.equal f1 f2 -> 
+  | GProj (loc,f1,c1), NProj (f2,c2) when Constant.equal f1 f2 ->
      match_in u alp metas sigma c1 c2
   | GApp (loc,f1,l1), NApp (f2,l2) ->
       let n1 = List.length l1 and n2 = List.length l2 in
@@ -692,6 +694,7 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
       when sty1 == sty2
 	 && Int.equal (List.length tml1) (List.length tml2)
 	 && Int.equal (List.length eqnl1) (List.length eqnl2) ->
+    let tml1 = List.map (fun (x,(y,z,_)) -> x,(y,z)) tml1 in (* TODO: removing indices. Probably we do not need indices in NCases. Check -jls *)
       let rtno1' = abstract_return_type_context_glob_constr tml1 rtno1 in
       let rtno2' = abstract_return_type_context_notation_constr tml2 rtno2 in
       let sigma =

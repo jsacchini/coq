@@ -509,10 +509,11 @@ let context operation path (t : constr) =
       | ((P_APP n :: p),  App (f,v)) ->
 	  let v' = Array.copy v in
 	  v'.(pred n) <- loop i p v'.(pred n); mkApp (f, v')
-      | ((P_BRANCH n :: p), Case (ci,q,c,v)) ->
+      | ((P_BRANCH n :: p), Case (ci,q,_,c,v)) -> (* ignoring indices -jls *)
 	  (* avant, y avait mkApp... anyway, BRANCH seems nowhere used *)
+          let v = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list v))) in (* ignoring impossible branches -jls *)
 	  let v' = Array.copy v in
-	  v'.(n) <- loop i p v'.(n); (mkCase (ci,q,c,v'))
+          v'.(n) <- loop i p v'.(n); (mkCaseNoIndex (ci,q,c,v')) (* no index -jls *)
       | ((P_ARITY :: p),  App (f,l)) ->
 	  appvect (loop i p f,l)
       | ((P_ARG :: p),  App (f,v)) ->
@@ -544,7 +545,9 @@ let occurence path (t : constr) =
     | (p, Cast (c,_,_)) -> loop p c
     | ([], _) -> t
     | ((P_APP n :: p),  App (f,v)) -> loop p v.(pred n)
-    | ((P_BRANCH n :: p), Case (_,_,_,v)) -> loop p v.(n)
+    | ((P_BRANCH n :: p), Case (_,_,_,_,v)) ->
+      let v = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list v))) in (* ignoring impossible branches -jls *)
+      loop p v.(n) (* ignoring indices -jls *)
     | ((P_ARITY :: p),  App (f,_)) -> loop p f
     | ((P_ARG :: p),  App (f,v)) -> loop p v.(0)
     | (p, Fix((_,n) ,(_,_,v))) -> loop p v.(n)

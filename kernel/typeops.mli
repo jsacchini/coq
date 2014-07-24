@@ -16,7 +16,7 @@ open Declarations
 
 (** {6 Typing functions (not yet tagged as safe) }
 
-    They return unsafe judgments that are "in context" of a set of 
+    They return unsafe judgments that are "in context" of a set of
     (local) universe variables (the ones that appear in the term)
     and associated constraints. In case of polymorphic definitions,
     these variables and constraints will be generalized.
@@ -99,7 +99,8 @@ val judge_of_constructor : env -> constructor puniverses -> unsafe_judgment
 
 (** {6 Type of Cases. } *)
 val judge_of_case : env -> case_info
-  -> unsafe_judgment -> unsafe_judgment -> unsafe_judgment array
+  -> unsafe_judgment -> unsafe_judgment array -> unsafe_judgment
+    -> unsafe_judgment option array
     -> unsafe_judgment
 
 (** Typecheck general fixpoint (not checking guard conditions) *)

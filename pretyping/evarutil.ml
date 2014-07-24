@@ -36,10 +36,10 @@ let evd_comb2 f evdref x y =
     evdref := evd';
     z
 
-let e_new_global evdref x = 
+let e_new_global evdref x =
   evd_comb1 (Evd.fresh_global (Global.env())) evdref x
 
-let new_global evd x = 
+let new_global evd x =
   Evd.fresh_global (Global.env()) evd x
 
 (****************************************************)
@@ -84,9 +84,9 @@ let env_nf_betaiotaevar sigma env =
       push_rel (map_rel_declaration (Reductionops.nf_betaiota sigma) d) e) env
 
 let nf_evars_universes evm =
-  Universes.nf_evars_and_universes_opt_subst (Reductionops.safe_evar_value evm) 
+  Universes.nf_evars_and_universes_opt_subst (Reductionops.safe_evar_value evm)
     (Evd.universe_subst evm)
-    
+
 let nf_evars_and_universes evm =
   let evm = Evd.nf_constraints evm in
     evm, nf_evars_universes evm
@@ -135,8 +135,8 @@ let has_undefined_evars or_sorts evd t =
             has_ev c; Array.iter has_ev args
         | Evar_empty ->
 	    raise NotInstantiatedEvar)
-    | Ind (_,l) | Const (_,l) | Construct (_,l) 
-	when or_sorts && not (Univ.Instance.is_empty l) -> 
+    | Ind (_,l) | Const (_,l) | Construct (_,l)
+	when or_sorts && not (Univ.Instance.is_empty l) ->
       raise Not_found
     | _ -> iter_constr has_ev t in
   try let _ = has_ev t in false
@@ -169,7 +169,7 @@ exception NoHeadEvar
 let head_evar =
   let rec hrec c = match kind_of_term c with
     | Evar (evk,_)   -> evk
-    | Case (_,_,c,_) -> hrec c
+    | Case (_,_,_,c,_) -> hrec c
     | App (c,_)      -> hrec c
     | Cast (c,_,_)   -> hrec c
     | _              -> raise NoHeadEvar
@@ -571,7 +571,7 @@ let gather_dependent_evars q evm =
     let (is_dependent,e) = Queue.pop q in
     (* checks if [e] has already been added to [!acc] *)
     begin if not (Evar.Map.mem e !acc) then
-        acc := process_dependent_evar q !acc evm is_dependent e  
+        acc := process_dependent_evar q !acc evm is_dependent e
     end
   done;
   !acc
@@ -773,7 +773,7 @@ let rec evar_absorb_arguments env evd (evk,args as ev) = function
 
 let define_evar_as_sort evd (ev,args) =
   let evd, u = new_univ_variable univ_rigid evd in
-  let evi = Evd.find_undefined evd ev in 
+  let evi = Evd.find_undefined evd ev in
   let s = Type u in
   let evd' = Evd.define ev (mkSort s) evd in
     Evd.set_leq_sort evd' (Type (Univ.super u)) (destSort evi.evar_concl), s

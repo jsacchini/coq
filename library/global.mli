@@ -78,7 +78,7 @@ val lookup_named     : variable -> Context.named_declaration
 val lookup_constant  : constant -> Declarations.constant_body
 val lookup_inductive : inductive ->
   Declarations.mutual_inductive_body * Declarations.one_inductive_body
-val lookup_pinductive : Constr.pinductive -> 
+val lookup_pinductive : Constr.pinductive ->
   Declarations.mutual_inductive_body * Declarations.one_inductive_body
 val lookup_mind      : mutual_inductive -> Declarations.mutual_inductive_body
 val lookup_module    : module_path -> Declarations.module_body
@@ -109,9 +109,9 @@ val join_safe_environment : unit -> unit
 val is_polymorphic : Globnames.global_reference -> bool
 val is_template_polymorphic : Globnames.global_reference -> bool
 
-val type_of_global_in_context : Environ.env -> 
+val type_of_global_in_context : Environ.env ->
   Globnames.global_reference -> Constr.types Univ.in_universe_context
-val type_of_global_unsafe : Globnames.global_reference -> Constr.types 
+val type_of_global_unsafe : Globnames.global_reference -> Constr.types
 
 (** Returns the universe context of the global reference (whatever it's polymorphic status is). *)
 val universes_of_global : Globnames.global_reference -> Univ.universe_context

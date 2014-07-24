@@ -61,8 +61,12 @@ and fix_kind =
   | GCoFix of int
 
 and predicate_pattern =
-    Name.t * (Loc.t * inductive * Name.t list) option
-      (** [(na,id)] = "as 'na' in 'id'" where if [id] is [Some(l,I,k,args)]. *)
+    Name.t * (Loc.t * inductive * Name.t list) option *
+      index_definition list option
+      (** [(na,id,d)] = "as 'na' in 'id' where 'd'" where if [id] is [Some(l,I,k,args)]. *)
+
+and index_definition = Name.t * glob_constr
+   (* An index definition of the form  x := M *)
 
 and tomatch_tuple = (glob_constr * predicate_pattern)
 

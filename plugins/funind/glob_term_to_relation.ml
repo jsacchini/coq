@@ -255,7 +255,7 @@ let coq_False_ref =
   (the list of expresions on which we will do the matching)
  *)
 let make_discr_match_el  =
-  List.map (fun e -> (e,(Anonymous,None)))
+  List.map (fun e -> (e,(Anonymous,None,None))) (* no index -jls *)
 
 (*
   [make_discr_match_brl i \[pat_1,...,pat_n\]]  constructs a discrimination pattern matching on the ith expression.
@@ -466,15 +466,15 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	in
 	begin
 	  match f with
-	    | GLambda _  -> 
-		let rec aux t l = 
-		  match l with 
+	    | GLambda _  ->
+		let rec aux t l =
+		  match l with
 		    | [] -> t
-		    | u::l -> 
-			match t with 
-			  | GLambda(loc,na,_,nat,b) -> 
+		    | u::l ->
+			match t with
+			  | GLambda(loc,na,_,nat,b) ->
 			      GLetIn(Loc.ghost,na,u,aux b l)
-			  | _ -> 
+			  | _ ->
 			      GApp(Loc.ghost,t,l)
 		in
 		build_entry_lc env funnames avoid (aux f args)
@@ -629,7 +629,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	    [lhs;rhs]
 	in
 	let match_expr =
-	  mkGCases(None,[(b,(Anonymous,None))],brl)
+	  mkGCases(None,[(b,(Anonymous,None,None))],brl) (* no index -jls *)
 	in
 	(* 		Pp.msgnl (str "new case := " ++ Printer.pr_glob_constr match_expr); *)
 	build_entry_lc env funnames avoid match_expr
@@ -657,7 +657,7 @@ let rec build_entry_lc env funnames avoid rt  : glob_constr build_entry_return =
 	  let br =
 	    (Loc.ghost,[],[case_pats.(0)],e)
 	  in
-	  let match_expr = mkGCases(None,[b,(Anonymous,None)],[br]) in
+	  let match_expr = mkGCases(None,[b,(Anonymous,None,None)],[br]) in (* no index -jls *)
 	  build_entry_lc env funnames avoid match_expr
 
 	end
@@ -844,30 +844,30 @@ let is_res id =
 
 
 
-let same_raw_term rt1 rt2 = 
-  match rt1,rt2 with 
+let same_raw_term rt1 rt2 =
+  match rt1,rt2 with
     | GRef(_,r1,_), GRef (_,r2,_) -> Globnames.eq_gr r1 r2
     | GHole _, GHole _ -> true
     | _ -> false
-let decompose_raw_eq lhs rhs = 
-  let rec decompose_raw_eq lhs rhs acc = 
+let decompose_raw_eq lhs rhs =
+  let rec decompose_raw_eq lhs rhs acc =
     observe (str "decomposing eq for " ++ pr_glob_constr lhs ++ str " " ++ pr_glob_constr rhs);
-    let (rhd,lrhs) = glob_decompose_app rhs in 
-    let (lhd,llhs) = glob_decompose_app lhs in 
+    let (rhd,lrhs) = glob_decompose_app rhs in
+    let (lhd,llhs) = glob_decompose_app lhs in
     observe (str "lhd := " ++ pr_glob_constr lhd);
     observe (str "rhd := " ++ pr_glob_constr rhd);
     observe (str "llhs := " ++ int (List.length llhs));
     observe (str "lrhs := " ++ int (List.length lrhs));
-    let sllhs = List.length llhs in 
-    let slrhs = List.length lrhs in 
-    if same_raw_term lhd rhd && Int.equal sllhs slrhs 
+    let sllhs = List.length llhs in
+    let slrhs = List.length lrhs in
+    if same_raw_term lhd rhd && Int.equal sllhs slrhs
     then
       (* let _ = assert false in  *)
       List.fold_right2 decompose_raw_eq	llhs lrhs acc
     else (lhs,rhs)::acc
   in
   decompose_raw_eq lhs rhs []
-     
+
 
 exception Continue
 (*
@@ -1030,13 +1030,13 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 		when Globnames.eq_gr eq_as_ref (Lazy.force Coqlib.coq_eq_ref) && n == Anonymous
 		  ->
 	      begin
-		try 
-		  let l = decompose_raw_eq rt1 rt2 in 
-		  if List.length l > 1 
-		  then 
+		try
+		  let l = decompose_raw_eq rt1 rt2 in
+		  if List.length l > 1
+		  then
 		    let new_rt =
-		      List.fold_left 
-			(fun acc (lhs,rhs) -> 
+		      List.fold_left
+			(fun acc (lhs,rhs) ->
 			  mkGProd(Anonymous,
 				  mkGApp(mkGRef(eq_as_ref),[mkGHole ();lhs;rhs]),acc)
 			)
@@ -1045,7 +1045,7 @@ let rec rebuild_cons env nb_args relname args crossed_types depth rt =
 		    in
 		    rebuild_cons env nb_args relname args crossed_types depth new_rt
 		  else raise Continue
-	      with Continue -> 
+	      with Continue ->
 		observe (str "computing new type for prod : " ++ pr_glob_constr rt);
 		let t',ctx = Pretyping.understand Evd.empty env t in
 		let new_env = Environ.push_rel (n,None,t') env in
@@ -1287,7 +1287,7 @@ let do_build_inductive
     *)
     let rel_arities = Array.mapi rel_arity funsargs in
     Util.Array.fold_left2 (fun env rel_name rel_ar ->
-			     Environ.push_named (rel_name,None, 
+			     Environ.push_named (rel_name,None,
 						 fst (with_full_print (Constrintern.interp_constr Evd.empty env) rel_ar)) env) env relnames rel_arities
   in
   (* and of the real constructors*)
@@ -1444,5 +1444,3 @@ let build_inductive funnames funsargs returned_types rtl =
   try
     do_build_inductive funnames funsargs returned_types rtl
   with e when Errors.noncritical e -> raise (Building_graph e)
-
-

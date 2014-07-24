@@ -61,7 +61,7 @@ let rec decompose_term env sigma t=
 		    decompose_term env sigma a),
 	      decompose_term env sigma b)
     | Construct c ->
-	let (((mind,i_ind),i_con),u)= c in 
+	let (((mind,i_ind),i_con),u)= c in
 	let canon_mind = mind_of_kn (canonical_mind mind) in
 	let canon_ind = canon_mind,i_ind in
 	let (oib,_)=Global.lookup_inductive (canon_ind) in
@@ -69,15 +69,15 @@ let rec decompose_term env sigma t=
 	  Constructor {ci_constr= ((canon_ind,i_con),u);
 		       ci_arity=nargs;
 		       ci_nhyps=nargs-oib.mind_nparams}
-    | Ind c -> 
-	let (mind,i_ind),u = c in 
+    | Ind c ->
+	let (mind,i_ind),u = c in
 	let canon_mind = mind_of_kn (canonical_mind mind) in
 	let canon_ind = canon_mind,i_ind in  (Symb (mkIndU (canon_ind,u)))
-    | Const (c,u) -> 
-	let canon_const = constant_of_kn (canonical_con c) in 
+    | Const (c,u) ->
+	let canon_const = constant_of_kn (canonical_con c) in
 	  (Symb (mkConstU (canon_const,u)))
-    | Proj (p, c) -> 
-	let canon_const = constant_of_kn (canonical_con p) in 
+    | Proj (p, c) ->
+	let canon_const = constant_of_kn (canonical_con p) in
 	  (Appli (Symb (mkConst canon_const), decompose_term env sigma c))
     | _ ->if closed0 t then (Symb t) else raise Not_found
 
@@ -144,27 +144,27 @@ let patterns_of_constr env sigma nrels term=
 
 let rec quantified_atom_of_constr env sigma nrels term =
   match kind_of_term (whd_delta env term) with
-      Prod (id,atom,ff) -> 
+      Prod (id,atom,ff) ->
 	if is_global _False ff then
 	  let patts=patterns_of_constr env sigma nrels atom in
 	      `Nrule patts
-	else 
+	else
 	  quantified_atom_of_constr (Environ.push_rel (id,None,atom) env) sigma (succ nrels) ff
-    | _ ->  
+    | _ ->
 	let patts=patterns_of_constr env sigma nrels term in
 	    `Rule patts
 
 let litteral_of_constr env sigma term=
   match kind_of_term (whd_delta env term) with
-    | Prod (id,atom,ff) -> 
+    | Prod (id,atom,ff) ->
 	if is_global _False ff then
 	  match (atom_of_constr env sigma atom) with
 	      `Eq(t,a,b) -> `Neq(t,a,b)
 	    | `Other(p) -> `Nother(p)
 	else
 	  begin
-	    try 
-	      quantified_atom_of_constr (Environ.push_rel (id,None,atom) env) sigma 1 ff  
+	    try
+	      quantified_atom_of_constr (Environ.push_rel (id,None,atom) env) sigma 1 ff
 	    with Not_found ->
 	      `Other (decompose_term env sigma term)
 	  end
@@ -235,7 +235,7 @@ let build_projection intype outtype (cstr:pconstructor) special default gls=
   let casee=mkRel 1 in
   let pred=mkLambda(Anonymous,intype,outtype) in
   let case_info=make_case_info (pf_env gls) ind RegularStyle in
-  let body= mkCase(case_info, pred, casee, branches) in
+  let body= mkCaseNoIndex(case_info, pred, casee, branches) in (* no index -jls *)
   let id=pf_get_new_id (Id.of_string "t") gls in
     mkLambda(Name id,intype,body)
 
@@ -243,10 +243,10 @@ let build_projection intype outtype (cstr:pconstructor) special default gls=
 
 let _M =mkMeta
 
-let app_global f args k = 
+let app_global f args k =
   Tacticals.pf_constr_of_global f (fun fc -> k (mkApp (fc, args)))
 
-let new_app_global f args k = 
+let new_app_global f args k =
   Tacticals.New.pf_constr_of_global f (fun fc -> k (mkApp (fc, args)))
 
 let new_refine c = Proofview.V82.tactic (refine c)
@@ -336,7 +336,7 @@ let refine_exact_check c gl =
   let evm, _ = pf_apply e_type_of gl c in
     Tacticals.tclTHEN (Refiner.tclEVARS evm) (Proofview.V82.of_tactic (exact_check c)) gl
 
-let convert_to_goal_tac c t1 t2 p = 
+let convert_to_goal_tac c t1 t2 p =
   Proofview.Goal.enter begin fun gl ->
   let tt1=constr_of_term t1 and tt2=constr_of_term t2 in
   let sort =
@@ -376,7 +376,7 @@ let discriminate_tac (cstr,u as cstru) p =
     let identity = Universes.constr_of_global _I in
     (* let trivial=pf_type_of gls identity in *)
     let trivial = Universes.constr_of_global _True in
-    let evm, outtype = Evd.new_sort_variable Evd.univ_flexible (Proofview.Goal.sigma gl) in 
+    let evm, outtype = Evd.new_sort_variable Evd.univ_flexible (Proofview.Goal.sigma gl) in
     let outtype = mkSort outtype in
     let pred=mkLambda(Name xid,outtype,mkRel 1) in
     let hid = Tacmach.New.of_old (pf_get_new_id (Id.of_string "Heq")) gl in

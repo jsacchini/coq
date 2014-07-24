@@ -205,7 +205,7 @@ let expand_notation_string ntn n =
   let tl =
     if Int.equal pos (String.length ntn) then ""
     else String.sub ntn (pos+1) (String.length ntn - pos -1) in
-  hd ^ "{ _ }" ^ tl
+    hd ^ "{ _ }" ^ tl
 
 (* This contracts the special case of "{ _ }" for sumbool, sumor notations *)
 (* Remark: expansion of squash at definition is done in metasyntax.ml *)
@@ -681,8 +681,8 @@ let intern_var genv (ltacvars,ntnvars) namedctx loc id =
 	GVar (loc,id), [], [], []
 
 let is_projection_ref = function
-  | ConstRef r -> 
-    if Environ.is_projection r (Global.env ()) then 
+  | ConstRef r ->
+    if Environ.is_projection r (Global.env ()) then
       let pb = Environ.lookup_projection r (Global.env ()) in
 	Some (r, pb.Declarations.proj_npars)
     else None
@@ -693,15 +693,15 @@ let proj_impls r impls =
   let f (x, l) = x, projection_implicits env r l in
     List.map f impls
 
-let proj_scopes n scopes = 
+let proj_scopes n scopes =
   List.skipn_at_least n scopes
 
 let find_appl_head_data c =
   match c with
-  | GRef (loc,ref,_) as x -> 
+  | GRef (loc,ref,_) as x ->
     let impls = implicits_of_global ref in
     let scopes = find_arguments_scope ref in
-    let isproj, impls, scopes = 
+    let isproj, impls, scopes =
       match is_projection_ref ref with
       | Some (r, n) -> true, proj_impls r impls, proj_scopes n scopes
       | None -> false, impls, scopes
@@ -710,9 +710,9 @@ let find_appl_head_data c =
   | GApp (_,GRef (_,ref,_),l) as x
       when l != [] && Flags.version_strictly_greater Flags.V8_2 ->
       let n = List.length l in
-      let impls = implicits_of_global ref in 
+      let impls = implicits_of_global ref in
       let scopes = find_arguments_scope ref in
-      let isproj, impls, scopes = 
+      let isproj, impls, scopes =
 	match is_projection_ref ref with
 	| Some (r, n) -> true, proj_impls r impls, proj_scopes n scopes
 	| None -> false, impls, scopes
@@ -1385,7 +1385,7 @@ let internalize globalenv env allow_patvar lvar c =
 	     in
 	       ((n, ro), List.rev rbl, intern_type env' ty, env')) dl in
         let idl = Array.map2 (fun (_,_,_,_,bd) (a,b,c,env') ->
-	     let env'' = List.fold_left_i (fun i en name -> 
+	     let env'' = List.fold_left_i (fun i en name ->
 					     let (_,bli,tyi,_) = idl_temp.(i) in
 					     let fix_args = (List.map (fun (_,(na, bk, _, _)) -> (build_impls bk na)) bli) in
 					       push_name_env lvar (impls_type_list ~args:fix_args tyi)
@@ -1451,7 +1451,7 @@ let internalize globalenv env allow_patvar lvar c =
     | CAppExpl (loc, (isproj,ref,us), args) ->
         let (f,_,args_scopes,_),_,args =
 	  let args = List.map (fun a -> (a,None)) args in
-	  intern_applied_reference intern env (Environ.named_context globalenv) 
+	  intern_applied_reference intern env (Environ.named_context globalenv)
 	    lvar us args ref in
 	(* check_projection isproj (List.length args) f; *)
 	(* Rem: GApp(_,f,[]) stands for @f *)
@@ -1460,13 +1460,13 @@ let internalize globalenv env allow_patvar lvar c =
     | CApp (loc, (isproj,f), args) ->
         let isproj,f,args = match f with
           (* Compact notations like "t.(f args') args" *)
-          | CApp (_,(Some _ as isproj',f), args') when not (Option.has_some isproj) -> 
+          | CApp (_,(Some _ as isproj',f), args') when not (Option.has_some isproj) ->
 	    isproj',f,args'@args
           (* Don't compact "(f args') args" to resolve implicits separately *)
           | _ -> isproj,f,args in
 	let (c,impargs,args_scopes,l),isprojf,args =
           match f with
-            | CRef (ref,us) -> 
+            | CRef (ref,us) ->
 	       intern_applied_reference intern env
 		 (Environ.named_context globalenv) lvar us args ref
             | CNotation (loc,ntn,([],[],[])) ->
@@ -1474,7 +1474,7 @@ let internalize globalenv env allow_patvar lvar c =
                 let x, isproj, impl, scopes, l = find_appl_head_data c in
 		  (x,impl,scopes,l), false, args
             | x -> (intern env f,[],[],[]), false, args in
-          apply_impargs (isproj,isprojf) c env impargs args_scopes 
+          apply_impargs (isproj,isprojf) c env impargs args_scopes
 	    (merge_impargs l args) loc
 
     | CRecord (loc, _, fs) ->
@@ -1491,10 +1491,20 @@ let internalize globalenv env allow_patvar lvar c =
 	  intern env app
 	end
     | CCases (loc, sty, rtnpo, tms, eqns) ->
-      let as_in_vars = List.fold_left (fun acc (_,(na,inb)) ->
-	Option.fold_left (fun x tt -> List.fold_right Id.Set.add (ids_of_cases_indtype tt) x)
-	  (Option.fold_left (fun x (_,y) -> match y with | Name y' -> Id.Set.add y' x |_ -> x) acc na)
-	  inb) Id.Set.empty tms in
+      let as_vars = List.fold_left (fun acc (_,(na,_,_)) ->
+        Option.fold_left (fun x (_,y) ->
+          match y with
+          | Name y' -> Id.Set.add y' x
+          | _ -> x) acc na) Id.Set.empty tms in
+      let in_vars = List.fold_left (fun acc (_,(_,inb,_)) ->
+        Option.fold_left (fun x tt ->
+          List.fold_right Id.Set.add (ids_of_cases_indtype tt) x) acc inb)
+        Id.Set.empty tms in
+      let as_in_vars = Id.Set.union as_vars in_vars in
+      (* let as_in_vars = List.fold_left (fun acc (_,(na,inb)) -> *)
+      (*   Option.fold_left (fun x tt -> List.fold_right Id.Set.add (ids_of_cases_indtype tt) x) *)
+      (*     (Option.fold_left (fun x (_,y) -> match y with | Name y' -> Id.Set.add y' x |_ -> x) acc na) *)
+      (*     inb) Id.Set.empty tms in *)
       (* as, in & return vars *)
       let forbidden_vars = Option.cata free_vars_of_constr_expr as_in_vars rtnpo in
       let tms,ex_ids,match_from_in = List.fold_right
@@ -1506,17 +1516,18 @@ let internalize globalenv env allow_patvar lvar c =
 	(fun var bli -> push_name_env lvar (Variable,[],[],[]) bli (Loc.ghost,Name var))
 	(Id.Set.union ex_ids as_in_vars) (reset_hidden_inductive_implicit_test env) in
       (* PatVars before a real pattern do not need to be matched *)
-      let stripped_match_from_in = let rec aux = function
-	|[] -> []
-	|(_,PatVar _) :: q -> aux q
-	|l -> l
-				   in aux match_from_in in
+      let stripped_match_from_in =
+        let rec aux = function
+	  |[] -> []
+	  |(_,PatVar _) :: q -> aux q
+	  |l -> l
+	in aux match_from_in in
         let rtnpo = match stripped_match_from_in with
 	  | [] -> Option.map (intern_type env') rtnpo (* Only PatVar in "in" clauses *)
 	  | l -> let thevars,thepats=List.split l in
 		 Some (
 		   GCases(Loc.ghost,Term.RegularStyle,(* Some (GSort (Loc.ghost,GType None)) *)None, (* "return Type" *)
-			  List.map (fun id -> GVar (Loc.ghost,id),(Name id,None)) thevars, (* "match v1,..,vn" *)
+			  List.map (fun id -> GVar (Loc.ghost,id),(Name id,None,None)) thevars, (* "match v1,..,vn" *) (* TOOD: check indices -jls *)
 			  [Loc.ghost,[],thepats, (* "|p1,..,pn" *)
 			   Option.cata (intern_type env') (GHole(Loc.ghost,Evar_kinds.CasesType,None)) rtnpo; (* "=> P" is there were a P "=> _" else *)
 			   Loc.ghost,[],List.make (List.length thepats) (PatVar(Loc.ghost,Anonymous)), (* "|_,..,_" *)
@@ -1527,7 +1538,7 @@ let internalize globalenv env allow_patvar lvar c =
     | CLetTuple (loc, nal, (na,po), b, c) ->
 	let env' = reset_tmp_scope env in
 	(* "in" is None so no match to add *)
-        let ((b',(na',_)),_,_) = intern_case_item env' Id.Set.empty (b,(na,None)) in
+        let ((b',(na',_,_)),_,_) = intern_case_item env' Id.Set.empty (b,(na,None,None)) in (* TOOD: check indices -jls *)
         let p' = Option.map (fun u ->
 	  let env'' = push_name_env lvar (Variable,[],[],[]) (reset_hidden_inductive_implicit_test env')
 	    (Loc.ghost,na') in
@@ -1536,7 +1547,7 @@ let internalize globalenv env allow_patvar lvar c =
                    intern (List.fold_left (push_name_env lvar (Variable,[],[],[])) (reset_hidden_inductive_implicit_test env) nal) c)
     | CIf (loc, c, (na,po), b1, b2) ->
       let env' = reset_tmp_scope env in
-      let ((c',(na',_)),_,_) = intern_case_item env' Id.Set.empty (c,(na,None)) in (* no "in" no match to ad too *)
+      let ((c',(na',_,_)),_,_) = intern_case_item env' Id.Set.empty (c,(na,None,None)) in (* no "in" no match to ad too *) (* TOOD: check indices -jls *)
       let p' = Option.map (fun p ->
           let env'' = push_name_env lvar (Variable,[],[],[]) (reset_hidden_inductive_implicit_test env)
 	    (Loc.ghost,na') in
@@ -1608,7 +1619,7 @@ let internalize globalenv env allow_patvar lvar c =
       let rhs' = intern {env with ids = env_ids} rhs in
       (loc,eqn_ids,pl,rhs')) pll
 
-  and intern_case_item env forbidden_names_for_gen (tm,(na,t)) =
+  and intern_case_item env forbidden_names_for_gen (tm,(na,t,idxs)) =
     (*the "match" part *)
     let tm' = intern env tm in
     (* the "as" part *)
@@ -1618,7 +1629,7 @@ let internalize globalenv env allow_patvar lvar c =
       | _, None -> None,(Loc.ghost,Anonymous)
       | _, Some (loc,na) -> None,(loc,na) in
     (* the "in" part *)
-    let match_td,typ = match t with
+    let match_td,typ,idx_vars = match t with
     | Some t ->
 	let tids = ids_of_cases_indtype t in
 	let tids = List.fold_right Id.Set.add tids Id.Set.empty in
@@ -1654,10 +1665,75 @@ let internalize globalenv env allow_patvar lvar c =
 	  let _,args_rel =
 	    List.chop nparams (List.rev mip.Declarations.mind_arity_ctxt) in
 	  canonize_args args_rel l (Id.Set.elements forbidden_names_for_gen) [] [] in
-	match_to_do, Some (cases_pattern_expr_loc t,ind,List.rev_map snd nal)
+	match_to_do, Some (cases_pattern_expr_loc t,ind,List.rev_map snd nal), l
     | None ->
-      [], None in
-    (tm',(snd na,typ)), extra_id, match_td
+      [], None, [] in
+    let idxs' = Option.map (intern_index_defs env idx_vars) idxs in
+    (tm',(snd na,typ,idxs')), extra_id, match_td
+
+  and intern_index_defs env idx_vars idx_defs =
+    (* Extended matching -jls *)
+    (* Each var in where_vars must occur only once; index definitions are
+       reordered to match the vars in in_vars. where_vars must
+       be an initial segment of in_vars. *)
+    let loc_of_index_def idxs =
+      Loc.merge (fst (fst (List.hd idxs))) (fst (fst (List.last idxs))) in
+    let extract_defined_index ((loc,x),_) =
+      match x with
+      | Name x' -> x'
+      | Anonymous -> raise (InternalizationError (loc, IllegalMetavariable))
+      (* TODO: change error -jls *)
+    in
+    (* Check that there are no duplicate definitions *)
+    let rec has_duplicate l = match l with
+      [] -> None
+    | x :: xs -> if List.mem x xs then Some x else has_duplicate xs in
+    let _ = match has_duplicate (List.map extract_defined_index idx_defs) with
+    | Some x ->
+      raise (InternalizationError (loc_of_index_def idx_defs,
+                                   NonLinearPattern x))
+      (* TODO: change error -jls *)
+    | None -> () in
+    (* Check that index definitions are a initial part of the indices *)
+    (* TODO: check that only simple variables occur in the indices *)
+    let extract_index x =
+      match x with
+      | PatVar (_, Name id) -> Some id
+      | PatVar (_, Anonymous) -> None
+      | _ -> raise (Failure "Complex pattern not allowed in extended match") in
+    let idx_vars = List.map extract_index idx_vars in
+    let find_and_remove f xs =
+      let rec find_and_remove_ f acc xs =
+        match xs with
+        | [] -> raise Not_found
+        | x :: xs -> if f x then x, List.rev acc @ xs
+                     else find_and_remove_ f (x::acc) xs
+      in
+        find_and_remove_ f [] xs
+    in
+    let find_index_by_name id ((_,x),_) =
+      match x with
+      | Name id' -> id == id'
+      | Anonymous -> false in
+    let rec intern_index_def idx_vars idx_defs =
+      match idx_vars, idx_defs with
+      | [], [] -> []
+      | [], _ -> raise (Failure "Extra index definition")
+      | Some x::xs, [] -> []
+      | Some x::xs, _ ->
+        let (_,d), ds =
+          try
+            find_and_remove (find_index_by_name x) idx_defs
+          with Not_found -> raise (Failure "Missing index definition")
+        in
+        let d' = intern env d in
+        let idxs = intern_index_def xs ds in
+          (Name x, d') :: idxs
+      | None::_, [] -> []
+      | None::_, _ -> raise (Failure "Extra index definition")
+    in
+      intern_index_def idx_vars idx_defs
+
 
   and iterate_prod loc2 env bk ty body nal =
     let env, bl = intern_assumption intern lvar env nal bk ty in
@@ -1711,10 +1787,10 @@ let internalize globalenv env allow_patvar lvar c =
     | hd :: tl -> l, None :: tl
     | [] -> l, []
 
-  and apply_impargs (isproj,isprojf) c env imp subscopes l loc = 
-    let l = 
-      let imp = 
-	if isprojf && isproj <> None then 
+  and apply_impargs (isproj,isprojf) c env imp subscopes l loc =
+    let l =
+      let imp =
+	if isprojf && isproj <> None then
 	  (* Drop first implicit which corresponds to record given in c.(p) notation *)
 	  List.map make_first_explicit imp
 	else imp
@@ -1726,21 +1802,21 @@ let internalize globalenv env allow_patvar lvar c =
 	  let proj = GProj (Loc.merge loc'' (loc_of_glob_constr hd), f, hd) in
 	    if List.is_empty tl then smart_gapp proj loc rest
 	    else GApp (loc, proj, tl @ rest)
-	| GRef (loc', ConstRef f, _), hd :: tl -> 
+	| GRef (loc', ConstRef f, _), hd :: tl ->
 	  let proj = GProj (Loc.merge loc' (loc_of_glob_constr hd), f, hd) in
 	    smart_gapp proj loc tl
-	| _ -> user_err_loc (loc, "apply_impargs", 
+	| _ -> user_err_loc (loc, "apply_impargs",
 			     str"Projection is not applied to enough arguments")
-      else 
+      else
 	(* check_projection isproj *)
 	smart_gapp c loc l
 
   and smart_gapp f loc = function
     | [] -> f
-    | l -> match f with 
+    | l -> match f with
       | GApp (loc', g, args) -> GApp (Loc.merge loc' loc, g, args@l)
       | _ -> GApp (Loc.merge (loc_of_glob_constr f) loc, f, l)
-      
+
   and intern_args env subscopes = function
     | [] -> []
     | a::args ->
@@ -1930,4 +2006,3 @@ let interp_context_evars ?(global_level=false) ?(impl_env=empty_internalization_
   let int_env,bl = intern_context global_level env impl_env params in
   let x = interp_rawcontext_evars evdref env bl in
   int_env, x
-

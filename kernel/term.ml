@@ -86,7 +86,8 @@ type ('constr, 'types) kind_of_term = ('constr, 'types) Constr.kind_of_term =
   | Const     of pconstant
   | Ind       of pinductive
   | Construct of pconstructor
-  | Case      of case_info * 'constr * 'constr * 'constr array
+  | Case      of case_info * 'constr * 'constr array * 'constr *
+                 'constr option array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
   | Proj      of constant * 'constr
@@ -114,7 +115,7 @@ let mkMeta = Constr.mkMeta
 let mkEvar = Constr.mkEvar
 let mkSort = Constr.mkSort
 let mkProp = Constr.mkProp
-let mkSet  = Constr.mkSet 
+let mkSet  = Constr.mkSet
 let mkType = Constr.mkType
 let mkCast = Constr.mkCast
 let mkProd = Constr.mkProd
@@ -130,6 +131,7 @@ let mkIndU = Constr.mkIndU
 let mkConstructU = Constr.mkConstructU
 let mkConstructUi = Constr.mkConstructUi
 let mkCase = Constr.mkCase
+let mkCaseNoIndex = Constr.mkCaseNoIndex (* TODO: double-check where this function is used -jls *)
 let mkFix = Constr.mkFix
 let mkCoFix = Constr.mkCoFix
 
@@ -305,7 +307,7 @@ let isConstruct c = match kind_of_term c with Construct _ -> true | _ -> false
 
 (* Destructs a term <p>Case c of lc1 | lc2 .. | lcn end *)
 let destCase c = match kind_of_term c with
-  | Case (ci,p,c,v) -> (ci,p,c,v)
+  | Case (ci,p,i,c,v) -> (ci,p,i,c,v)
   | _ -> raise DestKO
 
 let isCase c =  match kind_of_term c with Case _ -> true | _ -> false
@@ -669,7 +671,7 @@ let kind_of_type t = match kind_of_term t with
   | Prod (na,t,c) -> ProdType (na, t, c)
   | LetIn (na,b,t,c) -> LetInType (na, b, t, c)
   | App (c,l) -> AtomicType (c, l)
-  | (Rel _ | Meta _ | Var _ | Evar _ | Const _ 
+  | (Rel _ | Meta _ | Var _ | Evar _ | Const _
   | Proj _ | Case _ | Fix _ | CoFix _ | Ind _)
     -> AtomicType (t,[||])
   | (Lambda _ | Construct _) -> failwith "Not a type"

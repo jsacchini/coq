@@ -65,10 +65,10 @@ module Env = struct
   type t = (int ConstrHashtbl.t * int ref)
 
   let add (tbl, off) (t : Term.constr) =
-    try ConstrHashtbl.find tbl t 
+    try ConstrHashtbl.find tbl t
     with
-    | Not_found -> 
-      let i = !off in 
+    | Not_found ->
+      let i = !off in
       let () = ConstrHashtbl.add tbl t i in
       let () = incr off in
       i
@@ -123,7 +123,9 @@ module Bool = struct
       else if head === negb && Array.length args = 1 then
         Negb (aux args.(0))
       else Var (Env.add env c)
-    | Term.Case (info, r, arg, pats) ->
+    | Term.Case (info, r, _, arg, pats) -> (* ignore indices -jls *)
+      let pats = Array.of_list (List.map Option.get (List.filter Option.has_some (Array.to_list pats))) in (* ignoring impossible branches -jls *)
+
       let is_bool =
         let i = info.Term.ci_ind in
         Names.eq_ind i (Lazy.force ind)
@@ -171,7 +173,7 @@ module Btauto = struct
   | Bool.Xorb (b1, b2) -> lapp f_xor [|convert b1; convert b2|]
   | Bool.Ifb (b1, b2, b3) -> lapp f_ifb [|convert b1; convert b2; convert b3|]
 
-  let convert_env env : Term.constr = 
+  let convert_env env : Term.constr =
     CoqList.of_list (Lazy.force Bool.typ) env
 
   let reify env t = lapp eval [|convert_env env; convert t|]
