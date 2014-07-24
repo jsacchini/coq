@@ -31,7 +31,7 @@ Hint Resolve JMeq_refl.
 Definition JMeq_hom {A : Type} (x y : A) := JMeq x y.
 
 Lemma JMeq_sym : forall (A B:Type) (x:A) (y:B), JMeq x y -> JMeq y x.
-Proof. 
+Proof.
 intros; destruct H; trivial.
 Qed.
 
@@ -43,53 +43,58 @@ Proof.
 destruct 2; trivial.
 Qed.
 
-Axiom JMeq_eq : forall (A:Type) (x y:A), JMeq x y -> x = y.
+Lemma JMeq_eq : forall (A:Type) (x y:A), JMeq x y -> x = y.
+Proof.
+intros A x y H; depcase H with 1; trivial.
+Qed.
 
 Lemma JMeq_ind : forall (A:Type) (x:A) (P:A -> Prop),
   P x -> forall y, JMeq x y -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := H'); trivial.
+intros A x P H y H'; depcase H' with 1; trivial.
 Qed.
 
 Lemma JMeq_rec : forall (A:Type) (x:A) (P:A -> Set),
   P x -> forall y, JMeq x y -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := H'); trivial.
+intros A x P H y H'; depcase H' with 1; trivial.
 Qed.
 
 Lemma JMeq_rect : forall (A:Type) (x:A) (P:A->Type),
   P x -> forall y, JMeq x y -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := H'); trivial.
+intros A x P H y H'; depcase H' with 1; trivial.
 Qed.
 
 Lemma JMeq_ind_r : forall (A:Type) (x:A) (P:A -> Prop),
    P x -> forall y, JMeq y x -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := JMeq_sym H'); trivial.
+intros A x P H y H'; depcase (JMeq_sym H') with 1; trivial.
 Qed.
 
 Lemma JMeq_rec_r : forall (A:Type) (x:A) (P:A -> Set),
    P x -> forall y, JMeq y x -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := JMeq_sym H'); trivial.
+intros A x P H y H'; depcase (JMeq_sym H') with 1; trivial.
 Qed.
 
 Lemma JMeq_rect_r : forall (A:Type) (x:A) (P:A -> Type),
    P x -> forall y, JMeq y x -> P y.
 Proof.
-intros A x P H y H'; case JMeq_eq with (1 := JMeq_sym H'); trivial.
+intros A x P H y H'; depcase (JMeq_sym H') with 1; trivial.
 Qed.
 
 Lemma JMeq_congr :
  forall (A:Type) (x:A) (B:Type) (f:A->B) (y:A), JMeq x y -> f x = f y.
 Proof.
-intros A x B f y H; case JMeq_eq with (1 := H); trivial.
+intros A x B f y H; depcase H with 1; trivial.
 Qed.
 
 (** [JMeq] is equivalent to [eq_dep Type (fun X => X)] *)
 
 Require Import Eqdep.
+
+
 
 Lemma JMeq_eq_dep_id :
  forall (A B:Type) (x:A) (y:B), JMeq x y -> eq_dep Type (fun X => X) A x B y.
@@ -126,16 +131,16 @@ assert (true=false) by (destruct H; reflexivity).
 discriminate.
 Qed.
 
-(** However, when the dependencies are equal, [JMeq (P p) x (P q) y]
-    is as strong as [eq_dep U P p x q y] (this uses [JMeq_eq]) *)
+(** However, when the dependencies are equal, [JMeq (P p) x (P q) y] *)
+(*     is as strong as [eq_dep U P p x q y] (this uses [JMeq_eq]) *)
 
-Lemma JMeq_eq_dep : 
-  forall U (P:U->Prop) p q (x:P p) (y:P q), 
+Lemma JMeq_eq_dep :
+  forall U (P:U->Prop) p q (x:P p) (y:P q),
   p = q -> JMeq x y -> eq_dep U P p x q y.
 Proof.
 intros.
 destruct H.
-apply JMeq_eq in H0 as ->.
+depcase H0 with 1.
 reflexivity.
 Qed.
 
