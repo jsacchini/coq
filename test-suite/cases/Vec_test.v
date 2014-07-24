@@ -30,13 +30,24 @@ Definition head A n (v : vec A (S n)) :=
     | cons h t => h
   end.
 
+Lemma head_pf : forall A n, vec A (S n) -> A.
+Proof.
+intros A n v; depcase v; auto.
+Qed.
+
 Definition tail A n (v : vec A (S n)) :=
   match v in vec _ n0 where n0 := S n
         return vec A n with
     | cons  h t => t
   end.
 
+Lemma tail_pf : forall A n, vec A (S n) -> vec A n.
+Proof.
+  intros A n v; depcase v; auto.
+Qed.
+
 Print tail.
+Print head_pf.
 
 Eval compute in (fib 9).
 Eval compute in (tail (tail (tail (fib 9)))).

@@ -5,3 +5,12 @@ Definition K A (P : A -> Type) (x y : A) (H : P x) (p: path A x A y) :=
   match p in path _ _ B y0 where B := A
         return P y0
   with refl _ _ => H end.
+
+Lemma K' : forall A (P : A -> Type) (x y : A), P x -> path A x A y -> P y.
+Proof.
+  intros A P x y H p.
+  depcase p with 1.
+  trivial.
+Defined.
+
+Print K'.

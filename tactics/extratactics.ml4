@@ -22,6 +22,9 @@ open Evd
 open Equality
 open Misctypes
 
+(* For depcase *)
+open Inductiveops
+
 DECLARE PLUGIN "extratactics"
 
 (**********************************************************************)
@@ -872,4 +875,127 @@ END
 TACTIC EXTEND give_up
 | [ "give_up" ] ->
     [ Proofview.give_up ]
+END
+
+
+let dep_case c (n : int option) =
+  Proofview.Goal.enter begin fun gl ->
+    let cl = Proofview.Goal.concl gl in
+    let sigma = Proofview.Goal.sigma gl in
+    let env = Proofview.Goal.env gl in
+    let (ind, t) =
+      try Tacmach.New.pf_apply Tacred.reduce_to_atomic_ind gl
+            (Tacmach.New.pf_type_of gl c)
+      with UserError _ ->
+        let msg = str "The type is not inductive." in
+        Errors.errorlabstrm "" msg
+    in
+    let Inductiveops.IndType (indf,realargs) = Inductiveops.find_rectype env sigma t in
+    let nargs = List.length realargs in
+    (* TODO: abstract the conclusion over the indices -jls *)
+    match n with
+      Some n when n < 1 || n > nargs ->
+        Proofview.tclZERO (UserError ("dep_case",
+                                      str "Invalid index number"))
+    | _ ->
+    let nargs = Option.cata (fun x -> x) nargs n in
+    let cstrs = Inductiveops.get_constructors env indf in
+    let arsign, _ = Inductiveops.get_arity env indf in
+    let indf' = indf (* TODO: lift? -jls *) in
+    let depind = Inductiveops.build_dependent_inductive env indf' in
+    let indp, _ = Inductiveops.dest_ind_family indf in
+    let ind, _ = Tacred.check_privacy env indp in
+    let ci = Inductiveops.make_case_info env ind RegularStyle in
+
+    (* Build pattern argument definitions *)
+    let idxs = Array.of_list (List.firstn nargs realargs) in
+    let cstrs_args_defs =
+      Array.init (Array.length cstrs)
+        (fun i -> Some (Array.make (cstrs.(i).cs_nargs) None))
+    in
+    let _ =
+      Array.map3 (fun x y z ->
+        try
+          ignore (Option.map (fun x -> Cases.index_matching env sigma x y z)
+                    (cstrs_args_defs.(x)));
+        with
+          Cases.Negative_Success -> cstrs_args_defs.(x) <- None
+        | Cases.Difficult_Match -> anomaly (Pp.str "difficult match?"))
+        (Array.init (Array.length cstrs) (fun i -> i))
+        (Array.map (fun x ->
+          let a,_ = Array.chop nargs x.cs_concl_realargs in a) cstrs)
+        (Array.init (Array.length cstrs)
+           (fun i -> Array.map (lift (cstrs.(i).cs_nargs)) idxs)) in
+
+    (* Apply constructor definitions to arguments *)
+    let cstr_defs = Array.map2 (fun ardefs cstr_info ->
+      match ardefs with
+      | Some ardefs ->
+        let cs_args = Array.of_list (cstr_info.cs_args) in
+        (* let names,aliasname = get_names pb.env cs_args eqns in *)
+          Some (Array.map2_i (fun i d (x,_,t) -> (x,d,t)) ardefs cs_args)
+      | None -> None) cstrs_args_defs cstrs in
+
+    (* Abstract the predicate; We assume that the term we are appying depcase
+     * to does not occur in the conclusion -jls
+     *)
+    let sigma, s = Evd.fresh_sort_in_family env sigma Term.InType in
+    (* TODO: recover sort from inductive or from conclusion -jls *)
+    let arsign_idxs = List.mapi
+      (fun i (x,_,t) -> if i < List.length arsign - nargs
+          then (x, None, t)
+          else (x, Some idxs.(List.length arsign-1-i), t)) arsign in
+    let meta_tp = Term.it_mkProd_or_LetIn (Constr.mkSort s) arsign_idxs in
+    let pred_meta = Evarutil.new_meta () in
+    let sigma = meta_declare pred_meta meta_tp sigma in
+    let defargs, nondefargs = List.chop nargs realargs in
+    let pred_scheme = applistc (mkMeta pred_meta) nondefargs in
+    let efl = Unification.elim_flags () in (* Needed for allow_K... flag -jls *)
+    let sigma = Unification.w_unify ~flags:efl env sigma Reduction.CUMUL pred_scheme cl in
+
+    let pred_meta = Evd.meta_value sigma pred_meta in
+    let num_abstr = List.length arsign - nargs in
+    let rel_args = Array.init num_abstr
+      (fun i -> mkRel (num_abstr + 1 - i)) in
+    let pred_body = mkApp(liftn nargs (List.length arsign-nargs+1)
+                            (lift 1 pred_meta), rel_args) in
+    let pred_ctx = (Anonymous,None,depind)::arsign in
+    let pred_body =
+      Reduction.whd_betaiota (Environ.push_rel_context pred_ctx env) pred_body in
+    let pred = Term.it_mkLambda_or_LetIn pred_body pred_ctx in
+
+      Proofview.Refine.refine begin fun h ->
+        let rec refine_branches h acc i =
+          if i < Array.length cstrs
+          then
+            match cstr_defs.(i) with
+            | Some defs ->
+              let case_arg = mkConstructU cstrs.(i).cs_cstr in
+              let case_arg = applistc case_arg
+                (List.map (lift cstrs.(i).cs_nargs) cstrs.(i).cs_params) in
+              let cstr_patt = Array.init cstrs.(i).cs_nargs
+                (fun x -> mkRel (cstrs.(i).cs_nargs - x)) in
+              let case_arg = mkApp (case_arg, cstr_patt) in
+              let _, nondepargs = Array.chop nargs cstrs.(i).cs_concl_realargs in
+              let br_pred = lift cstrs.(i).cs_nargs (mkApp(mkApp(pred,cstrs.(i).cs_concl_realargs),[|case_arg|])) in
+              let br_pred = Reduction.whd_betaiota env br_pred in
+
+              let br_tp = Array.fold_left (fun g d -> Term.mkProd_or_LetIn d g)
+                br_pred defs in
+              let (h, c) = Proofview.Refine.new_evar h env br_tp in
+                refine_branches h (Some c :: acc) (i+1)
+            | None -> refine_branches h (None :: acc) (i+1)
+          else
+            h, acc
+        in
+          let (h', cs) = refine_branches h [] 0 in
+            (h', mkCase(ci,pred,idxs,c,Array.of_list (List.rev cs)))
+      end
+
+  end
+
+(* Simple case elimination for dependent match *)
+TACTIC EXTEND dep_case
+| [ "depcase" constr(x) ] -> [ dep_case x None ]
+| [ "depcase" constr(x) "with" integer(n) ] -> [ dep_case x (Some n) ]
 END
