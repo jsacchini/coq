@@ -63,6 +63,9 @@ let print_usage_channel co command =
   -dump-glob f           dump globalizations in file f (to be used by coqdoc)
   -with-geoproof (yes|no) to (de)activate special functions for Geoproof within Coqide (default is yes)
   -impredicative-set     set sort Set impredicative
+  -disable-termination-checking
+                         disable termination and productivity checking
+
   -dont-load-proofs      don't load opaque proofs in memory
   -xml                   export XML files either to the hierarchy rooted in
                          the directory $COQ_XML_LIBRARY_ROOT (if set) or to
@@ -97,5 +100,3 @@ let print_config () =
   Printf.printf "CAMLP4=%s\n" Coq_config.camlp4;
   Printf.printf "CAMLP4BIN=%s\n" Coq_config.camlp4bin;
   Printf.printf "CAMLP4LIB=%s\n" Coq_config.camlp4lib
-
-

@@ -91,3 +91,7 @@ val camlbin_spec : bool ref
 val camlbin : string ref
 val camlp4bin_spec : bool ref
 val camlp4bin : string ref
+
+
+(** Termination/productivity checking *)
+val do_termination_checking : bool ref

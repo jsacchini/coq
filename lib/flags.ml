@@ -132,3 +132,6 @@ let camlbin = ref Coq_config.camlbin
 let camlp4bin_spec = ref false
 let camlp4bin = ref Coq_config.camlp4bin
 
+
+(* Termination/productivity checking *)
+let do_termination_checking = ref true

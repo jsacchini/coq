@@ -3,7 +3,7 @@
 ##################################
 #
 #  Configuration script for Coq
-# 
+#
 ##################################
 
 VERSION=8.3pl3
@@ -18,7 +18,7 @@ test -d bin || mkdir bin
 which () {
 IFS=":" # set words separator in PATH to be ':' (it allows spaces in dirnames)
 for i in $PATH; do
-  if test -z "$i"; then i=.; fi 
+  if test -z "$i"; then i=.; fi
   if [ -f "$i/$1" ] ; then
 	IFS=" "
         echo "$i/$1"
@@ -221,21 +221,21 @@ while : ; do
 			  *) with_doc=no
 		      esac
 		      shift;;
-    -with-geoproof|--with-geoproof) 
+    -with-geoproof|--with-geoproof)
 	  case "$2" in
 	      yes) with_geoproof=true;;
 	      no) with_geoproof=false;;
 	  esac
 	  shift;;
-    -with-cc|-with-gcc|--with-cc|--with-gcc) 
+    -with-cc|-with-gcc|--with-cc|--with-gcc)
 	  gcc_spec=yes
 	  gcc_exec=$2
 	  shift;;
-    -with-ar|--with-ar) 
+    -with-ar|--with-ar)
 	  ar_spec=yes
 	  ar_exec=$2
 	  shift;;
-    -with-ranlib|--with-ranlib) 
+    -with-ranlib|--with-ranlib)
 	  ranlib_spec=yes
 	  ranlib_exec=$2
 	  shift;;
@@ -243,7 +243,7 @@ while : ; do
     -debug|--debug) coq_debug_flag=-g;;
     -profile|--profile) coq_profile_flag=-p;;
     -annotate|--annotate) coq_annotate_flag=-dtypes;;
-    -force-caml-version|--force-caml-version|-force-ocaml-version|--force-ocaml-version) 
+    -force-caml-version|--force-caml-version|-force-ocaml-version|--force-ocaml-version)
           force_caml_version_spec=yes
 	  force_caml_version=yes;;
     *) echo "Unknown option \"$1\"." 1>&2; usage; exit 2;;
@@ -269,7 +269,7 @@ esac
 # Architecture
 
 case $arch_spec in
-    no) 
+    no)
     # First we test if we are running a Cygwin system
     if [ `uname -s | cut -c -6` = "CYGWIN" ] ; then
 	ARCH="win32"
@@ -298,7 +298,7 @@ esac
 # executable extension
 
 case $ARCH in
-    win32) 
+    win32)
       EXE=".exe"
       DLLEXT=".dll";;
     *) EXE=""
@@ -307,7 +307,7 @@ esac
 
 # Is the source tree checked out from a recognised
 # version control system ?
-if test -e .svn/entries ; then 
+if test -e .svn/entries ; then
     checkedout=svn
 elif [ -d '{arch}' ]; then
     checkedout=gnuarch
@@ -324,7 +324,7 @@ if [ "$MAKE" != "" ]; then
   MAKEVERSION=`$MAKE -v | head -1 | cut -d" " -f3`
   MAKEVERSIONMAJOR=`echo $MAKEVERSION | cut -d. -f1`
   MAKEVERSIONMINOR=`echo $MAKEVERSION | cut -d. -f2`
-  if [ "$MAKEVERSIONMAJOR" -eq 3 -a "$MAKEVERSIONMINOR" -ge 81 ]; then
+  if [ "$MAKEVERSIONMAJOR" -eq 3 -a "$MAKEVERSIONMINOR" -ge 81 -o "$MAKEVERSIONMAJOR" -eq 4 ]; then
       echo "You have GNU Make $MAKEVERSION. Good!"
   else
       OK="no"
@@ -374,7 +374,7 @@ case $camldir_spec in
 	    "") echo "$bytecamlc is not present in your path!"
 		echo "Give me manually the path to the $bytecamlc executable [/usr/local/bin by default]: "
 		read CAMLC
-		
+
 		case "$CAMLC" in
 		    "") CAMLC=/usr/local/bin/$bytecamlc;;
 		    */ocamlc|*/ocamlc.opt) true;;
@@ -384,7 +384,7 @@ case $camldir_spec in
 	esac
 	CAMLBIN=`dirname "$CAMLC"`;;
     yes) CAMLC=$camldir/$bytecamlc
-        
+
          CAMLBIN=`dirname "$CAMLC"`
 	 bytecamlc="$CAMLC"
 	 nativecamlc=$CAMLBIN/$nativecamlc
@@ -422,7 +422,7 @@ case $CAMLVERSION in
 	    exit 1
 	fi;;
     ?*)
-	CAMLP4COMPAT="-loc loc" 
+	CAMLP4COMPAT="-loc loc"
 	echo "You have Objective-Caml $CAMLVERSION. Good!";;
     *)
 	echo "I found the Objective-Caml compiler but cannot find its version number!"
@@ -528,7 +528,7 @@ case $CAMLP4LIB in
 esac
 
 # Assume that camlp(4|5) binaries are at the same place as ocaml ones
-# (this should become configurable some day) 
+# (this should become configurable some day)
 CAMLP4BIN=${CAMLBIN}
 
 # do we have a native compiler: test of ocamlopt and its version
@@ -570,7 +570,7 @@ case $ARCH in
 	      OSDEPLIBS="-cclib -lunix"
         esac;;
   alpha) OSDEPLIBS="-cclib -lunix";;
-  win32) OS="Win32" 
+  win32) OS="Win32"
 	 OSDEPLIBS="-cclib -lunix"
 	 cflags="-mno-cygwin $cflags";;
   *) OSDEPLIBS="-cclib -lunix"
@@ -580,18 +580,18 @@ esac
 
 # -byte-only should imply -coqide byte, unless the user decides otherwise
 
-if [ "$best_compiler" = "byte" -a "$coqide_spec" = "no" ]; then 
+if [ "$best_compiler" = "byte" -a "$coqide_spec" = "no" ]; then
     coqide_spec=yes
     COQIDE=byte
 fi
 
 # Which coqide is asked ? which one is possible ?
 
-if [ "$coqide_spec" = "yes" -a "$COQIDE" = "no" ]; then 
+if [ "$coqide_spec" = "yes" -a "$COQIDE" = "no" ]; then
     echo "CoqIde disabled as requested."
 else
     case $lablgtkdir_spec in
-	no) 
+	no)
 	    if [ -f "${CAMLLIB}/lablgtk2/glib.mli" ]; then
 		lablgtkdir=${CAMLLIB}/lablgtk2
 	    elif [ -f "${CAMLLIB}/site-lib/lablgtk2/glib.mli" ]; then
@@ -610,13 +610,13 @@ else
     elif [ -z "`grep -w convert_with_fallback "$lablgtkdir/glib.mli"`" ]; then
 	echo "LablGtk2 found but too old: CoqIde will not be available."
 	COQIDE=no;
-    elif [ "$coqide_spec" = "yes" -a "$COQIDE" = "byte" ]; then 
+    elif [ "$coqide_spec" = "yes" -a "$COQIDE" = "byte" ]; then
 	echo "LablGtk2 found, bytecode CoqIde will be used as requested."
 	COQIDE=byte
-    elif [ ! -f "${CAMLLIB}/threads/threads.cmxa" ]; then 
+    elif [ ! -f "${CAMLLIB}/threads/threads.cmxa" ]; then
 	echo "LablGtk2 found, no native threads: bytecode CoqIde will be available."
 	COQIDE=byte
-    else 
+    else
 	echo "LablGtk2 found, native threads: native CoqIde will be available."
 	COQIDE=opt
     fi
@@ -638,7 +638,7 @@ esac
 case $ARCH in
     win32)
 	# true -> strip : it exists under cygwin !
-	STRIPCOMMAND="strip";; 
+	STRIPCOMMAND="strip";;
     *)
     if [ "$coq_profile_flag" = "-p" ] || [ "$coq_debug_flag" = "-g" ] ||
        [ "`uname -s`" = "Darwin" -a "$HASNATDYNLINK" = "true" ]
@@ -658,11 +658,11 @@ esac
 # "
 ### Test if documentation can be compiled (latex, hevea)
 
-if test "$with_doc" = "all" 
+if test "$with_doc" = "all"
 then
     for cmd in "latex" "hevea" ; do
 	if test ! -x "`which $cmd`"
-	then 
+	then
 	    echo "$cmd was not found; documentation will not be available"
 	    with_doc=no
 	    break
@@ -809,7 +809,7 @@ esac
 # case $emacs_spec in
 #     no) printf "Which Emacs command should I use to compile coq.el [$emacs_def]? "
 #         read EMACS
-	
+
 # 	case $EMACS in
 # 	    "") EMACS=$emacs_def;;
 # 	    *) true;;
@@ -876,10 +876,10 @@ if test "$coq_debug_flag" = "-g" ; then
 fi
 
 ####################################################
-# Fixing lablgtk types (before/after 2.6.0) 
+# Fixing lablgtk types (before/after 2.6.0)
 ####################################################
 
-if [ ! "$COQIDE" = "no" ]; then 
+if [ ! "$COQIDE" = "no" ]; then
     if grep "class view " "$lablgtkdir/gText.mli" | grep -q "\[>" ; then
        if grep -q "?accepts_tab:bool" "$lablgtkdir/gText.mli" ; then
         cp -f ide/undo_lablgtk_ge212.mli ide/undo.mli
@@ -889,7 +889,7 @@ if [ ! "$COQIDE" = "no" ]; then
     else
 	cp -f ide/undo_lablgtk_lt26.mli ide/undo.mli
     fi
-fi  
+fi
 
 ##############################################
 # Creation of configuration files

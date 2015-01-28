@@ -196,6 +196,8 @@ let parse_args is_ide =
 	parse rem
     | "-impredicative-set" :: rem ->
         set_engagement Declarations.ImpredicativeSet; parse rem
+    | "-disable-termination-checking" :: rem ->
+        Flags.do_termination_checking := false; parse rem
 
     | ("-I"|"-include") :: d :: "-as" :: p :: rem -> set_include d p; parse rem
     | ("-I"|"-include") :: d :: "-as" :: [] -> usage ()

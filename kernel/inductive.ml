@@ -863,6 +863,13 @@ let check_fix env ((nvect,_),(names,_,bodies as recdef) as fix) =
 	(push_rec_types recdef env) (judgment_of_fixpoint recdef)
   done
 
+
+let check_fix_if_termination_checking env fix =
+  if !Flags.do_termination_checking
+  then check_fix env fix
+  else ()
+
+
 (*
 let cfkey = Profile.declare_profile "check_fix";;
 let check_fix env fix = Profile.profile3 cfkey check_fix env fix;;
@@ -974,3 +981,9 @@ let check_cofix env (bodynum,(names,types,bodies as recdef)) =
       error_ill_formed_rec_body errenv err names i
 	fixenv (judgment_of_fixpoint recdef)
   done
+
+
+let check_cofix_if_termination_checking env cofix =
+  if !Flags.do_termination_checking
+  then check_cofix env cofix
+  else ()

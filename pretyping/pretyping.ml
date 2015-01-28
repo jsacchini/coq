@@ -54,7 +54,7 @@ let search_guard loc env possible_indexes fixdefs =
   if List.for_all (fun l->1=List.length l) possible_indexes then
     let indexes = Array.of_list (List.map List.hd possible_indexes) in
     let fix = ((indexes, 0),fixdefs) in
-    (try check_fix env fix with
+    (try check_fix_if_termination_checking env fix with
        | e -> if loc = dummy_loc then raise e else Stdpp.raise_with_loc loc e);
     indexes
   else
@@ -397,7 +397,8 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	      make_judge (mkFix ((indexes,i),fixdecls)) ftys.(i)
 	  | RCoFix i ->
 	      let cofix = (i,(names,ftys,fdefs)) in
-	      (try check_cofix env cofix with e -> Stdpp.raise_with_loc loc e);
+	      (try check_cofix_if_termination_checking env cofix
+               with e -> Stdpp.raise_with_loc loc e);
 	      make_judge (mkCoFix cofix) ftys.(i) in
 	inh_conv_coerce_to_tycon loc env evdref fixj tycon
 
