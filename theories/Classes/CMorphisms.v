@@ -1,7 +1,7 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -73,7 +73,6 @@ Section Proper.
   
   Definition respectful (R : crelation A) (R' : crelation B) : crelation (A -> B) :=
     Eval compute in @respectful_hetero A A (fun _ => B) (fun _ => B) R (fun _ _ => R').
-
 End Proper.
 
 (** We favor the use of Leibniz equality or a declared reflexive crelation 
@@ -396,14 +395,14 @@ Section GenericInstances.
     Reflexive (@Logic.eq A ==> R').
   Proof. simpl_crelation. Qed.
 
-  (** [respectful] is a morphism for crelation equivalence. *)
-  
+  (** [respectful] is a morphism for crelation equivalence . *)
+  Set Printing All. Set Printing Universes.
   Global Instance respectful_morphism :
     Proper (relation_equivalence ++> relation_equivalence ++> relation_equivalence) 
            (@respectful A B).
   Proof. 
-    intros R R' HRR' S S' HSS' f g.
-    unfold respectful, relation_equivalence in * ; simpl in *.
+    intros R R' HRR' S S' HSS' f g. 
+    unfold respectful , relation_equivalence in *; simpl in *.
     split ; intros H x y Hxy.
     apply (fst (HSS' _ _)). apply H. now apply (snd (HRR' _ _)). 
     apply (snd (HSS' _ _)). apply H. now apply (fst (HRR' _ _)). 

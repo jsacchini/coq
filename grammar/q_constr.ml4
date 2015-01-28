@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -30,7 +30,7 @@ EXTEND
   sort:
     [ [ "Set"  -> Misctypes.GSet
       | "Prop" -> Misctypes.GProp
-      | "Type" -> Misctypes.GType None ] ]
+      | "Type" -> Misctypes.GType [] ] ]
   ;
   ident:
     [ [ s = string -> <:expr< Names.Id.of_string $str:s$ >> ] ]
@@ -70,7 +70,7 @@ EXTEND
     | "0"
       [ s = sort -> <:expr< Glob_term.GSort ($dloc$,s) >>
       | id = ident -> <:expr< Glob_term.GVar ($dloc$,$id$) >>
-      | "_" -> <:expr< Glob_term.GHole ($dloc$,Evar_kinds.QuestionMark (Evar_kinds.Define False),None) >>
+      | "_" -> <:expr< Glob_term.GHole ($dloc$,Evar_kinds.QuestionMark (Evar_kinds.Define False),Misctypes.IntroAnonymous,None) >>
       | "?"; id = ident -> <:expr< Glob_term.GPatVar($dloc$,(False,$id$)) >>
       | "{"; c1 = constr; "}"; "+"; "{"; c2 = constr; "}" ->
           apply_ref <:expr< coq_sumbool_ref >> [c1;c2]

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -67,13 +67,8 @@ val set_declare_scheme :
 
 (** [declare_mind me] declares a block of inductive types with
    their constructors in the current section; it returns the path of
-   the whole block (boolean must be true iff it is a record) *)
-val declare_mind : internal_flag -> mutual_inductive_entry -> object_name
-
-(** Hooks for XML output *)
-val xml_declare_variable : (object_name -> unit) Hook.t
-val xml_declare_constant : (internal_flag * constant -> unit) Hook.t
-val xml_declare_inductive : (internal_flag * object_name -> unit) Hook.t
+   the whole block and a boolean indicating if it is a primitive record. *)
+val declare_mind : mutual_inductive_entry -> object_name * bool
 
 (** Declaration messages *)
 

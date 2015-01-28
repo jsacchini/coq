@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -51,15 +51,23 @@ let _ =
       optread  = (fun () -> !elim_flag) ;
       optwrite = (fun b -> elim_flag := b) }
 
-let record_elim_flag = ref false
+let bifinite_elim_flag = ref false
 let _ =
   declare_bool_option
     { optsync  = true;
       optdepr  = false;
-      optname  = "automatic declaration of induction schemes for records";
+      optname  = "automatic declaration of induction schemes for non-recursive types";
+      optkey   = ["Nonrecursive";"Elimination";"Schemes"];
+      optread  = (fun () -> !bifinite_elim_flag) ;
+      optwrite = (fun b -> bifinite_elim_flag := b) }
+let _ =
+  declare_bool_option
+    { optsync  = true;
+      optdepr  = true; (* compatibility 2014-09-03*)
+      optname  = "automatic declaration of induction schemes for non-recursive types";
       optkey   = ["Record";"Elimination";"Schemes"];
-      optread  = (fun () -> !record_elim_flag) ;
-      optwrite = (fun b -> record_elim_flag := b) }
+      optread  = (fun () -> !bifinite_elim_flag) ;
+      optwrite = (fun b -> bifinite_elim_flag := b) }
 
 let case_flag = ref false
 let _ =
@@ -77,7 +85,7 @@ let _ =
     { optsync  = true;
       optdepr  = false;
       optname  = "automatic declaration of boolean equality";
-      optkey   = ["Equality";"Schemes"];
+      optkey   = ["Boolean";"Equality";"Schemes"];
       optread  = (fun () -> !eq_flag) ;
       optwrite = (fun b -> eq_flag := b) }
 let _ = (* compatibility *)
@@ -120,7 +128,6 @@ let define id internal ctx c t =
       { const_entry_body = c;
         const_entry_secctx = None;
         const_entry_type = t;
-	const_entry_proj = false;
 	const_entry_polymorphic = true;
 	const_entry_universes = Evd.universe_context ctx;
         const_entry_opaque = false;
@@ -175,7 +182,8 @@ let try_declare_scheme what f internal names kn =
         alarm what internal (msg ++ str ".")
     | e when Errors.noncritical e ->
 	alarm what internal
-	  (str "Unknown exception during scheme creation.")
+	  (str "Unknown exception during scheme creation: "++
+           str (Printexc.to_string e))
 
 let beq_scheme_msg mind =
   let mib = Global.lookup_mind mind in
@@ -233,7 +241,7 @@ let declare_one_induction_scheme ind =
 
 let declare_induction_schemes kn =
   let mib = Global.lookup_mind kn in
-  if mib.mind_finite then begin
+  if mib.mind_finite <> Decl_kinds.CoFinite then begin
     for i = 0 to Array.length mib.mind_packets - 1 do
       declare_one_induction_scheme (kn,i);
     done;
@@ -243,7 +251,7 @@ let declare_induction_schemes kn =
 
 let declare_eq_decidability_gen internal names kn =
   let mib = Global.lookup_mind kn in
-  if mib.mind_finite then
+  if mib.mind_finite <> Decl_kinds.CoFinite then
     ignore (define_mutual_scheme eq_dec_scheme_kind internal names kn)
 
 let eq_dec_scheme_msg ind = (* TODO: mutual inductive case *)
@@ -470,7 +478,7 @@ let map_inductive_block f kn n = for i=0 to n-1 do f (kn,i) done
 let declare_default_schemes kn =
   let mib = Global.lookup_mind kn in
   let n = Array.length mib.mind_packets in
-  if !elim_flag && (mib.mind_record = None || !record_elim_flag) then
+  if !elim_flag && (mib.mind_finite <> BiFinite || !bifinite_elim_flag) then
     declare_induction_schemes kn;
   if !case_flag then map_inductive_block declare_one_case_analysis_scheme kn n;
   if is_eq_flag() then try_declare_beq_scheme kn;

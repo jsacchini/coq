@@ -1,7 +1,7 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -18,7 +18,7 @@
 
 Require Export BinNums.
 
-(** Postfix notation for positive numbers, allowing to mimic
+(** Postfix notation for positive numbers, which allows mimicking
     the position of bits in a big-endian representation.
     For instance, we can write [1~1~0] instead of [(xO (xI xH))]
     for the number 6 (which is 110 in binary notation).
@@ -482,8 +482,8 @@ Fixpoint lxor (p q:positive) : N :=
 
 (** Shifts. NB: right shift of 1 stays at 1. *)
 
-Definition shiftl_nat (p:positive)(n:nat) := Nat.iter n xO p.
-Definition shiftr_nat (p:positive)(n:nat) := Nat.iter n div2 p.
+Definition shiftl_nat (p:positive) := nat_rect _ p (fun _ => xO).
+Definition shiftr_nat (p:positive) := nat_rect _ p (fun _ => div2).
 
 Definition shiftl (p:positive)(n:N) :=
   match n with
@@ -537,7 +537,7 @@ Definition iter_op {A}(op:A->A->A) :=
   end.
 
 Definition to_nat (x:positive) : nat := iter_op plus x (S O).
-
+Arguments to_nat x: simpl never.
 (** ** From Peano natural numbers to binary positive numbers *)
 
 (** A version preserving positive numbers, and sending 0 to 1. *)

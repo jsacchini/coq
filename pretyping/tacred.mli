@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -17,7 +17,7 @@ open Locus
 open Univ
 
 type reduction_tactic_error =
-    InvalidAbstraction of env * constr * (env * Type_errors.type_error)
+    InvalidAbstraction of env * evar_map * constr * (env * Type_errors.type_error)
 
 exception ReductionTacticError of reduction_tactic_error
 
@@ -62,7 +62,7 @@ val fold_commands : constr list ->  reduction_function
 
 (** Pattern *)
 val pattern_occs : (occurrences * constr) list -> env -> evar_map -> constr -> 
-  constr
+   evar_map * constr
 
 (** Rem: Lazy strategies are defined in Reduction *)
 
@@ -103,3 +103,7 @@ val e_contextually : bool -> occurrences * constr_pattern ->
 (** Returns the same inductive if it is allowed for pattern-matching
     raises an error otherwise. **)
 val check_privacy : env -> inductive puniverses -> inductive puniverses
+
+(** Returns the same inductive if it is not a primitive record
+    raises an error otherwise. **)
+val check_not_primitive_record : env -> inductive puniverses -> inductive puniverses

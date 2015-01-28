@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -963,12 +963,6 @@ Proof.
   reflexivity.
   intros; apply (cond_fam f1); unfold g in H3; unfold image_rec in H3; elim H3;
     intros; exists (f0 x0); apply H4.
-Qed.
-
-Lemma Rlt_Rminus : forall a b:R, a < b -> 0 < b - a.
-Proof.
-  intros; apply Rplus_lt_reg_l with a; rewrite Rplus_0_r;
-    replace (a + (b - a)) with b; [ assumption | ring ].
 Qed.
 
 Lemma prolongement_C0 :

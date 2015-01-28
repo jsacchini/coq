@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -815,7 +815,7 @@ Ltac ring_elements set ext rspec pspec sspec dspec rk :=
                   fun f => f arth ext_r morph lemma1 lemma2
                 | _ => fail 4 "ring: bad sign specification"
                 end
-             | _ => fail 3 "ring: bad coefficiant division specification"
+             | _ => fail 3 "ring: bad coefficient division specification"
              end
           | _ => fail 2 "ring: bad power specification"
           end

@@ -970,6 +970,8 @@ Definition lt (s1 s2 : tree) : Prop :=
  exists s1' s2', Ok s1' /\ Ok s2' /\ eq s1 s1' /\ eq s2 s2'
    /\ L.lt (elements s1') (elements s2').
 
+Declare Equivalent Keys L.eq equivlistA.
+
 Instance lt_strorder : StrictOrder lt.
 Proof.
  split.
@@ -1017,7 +1019,7 @@ Lemma flatten_e_elements :
  forall l x r c e,
  elements l ++ flatten_e (More x r e) = elements (Node c l x r) ++ flatten_e e.
 Proof.
- intros; simpl. now rewrite elements_node, app_ass.
+ intros. now rewrite elements_node, app_ass.
 Qed.
 
 Lemma cons_1 : forall s e,
@@ -1051,7 +1053,7 @@ Lemma compare_cont_Cmp : forall s1 cont e2 l,
  (forall e, Cmp (cont e) l (flatten_e e)) ->
  Cmp (compare_cont s1 cont e2) (elements s1 ++ l) (flatten_e e2).
 Proof.
- induction s1 as [|c1 l1 Hl1 x1 r1 Hr1]; simpl; intros; auto.
+ induction s1 as [|c1 l1 Hl1 x1 r1 Hr1]; intros; auto.
  rewrite elements_node, app_ass; simpl.
  apply Hl1; auto. clear e2. intros [|x2 r2 e2].
  simpl; auto.

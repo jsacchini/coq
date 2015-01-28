@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,7 +23,7 @@ val add_tactic_notation :
 
 type atomic_entry = string * Genarg.glob_generic_argument list option
 
-val add_ml_tactic_notation : string ->
+val add_ml_tactic_notation : ml_tactic_name ->
   Egramml.grammar_prod_item list list -> atomic_entry list -> unit
 
 (** Adding a (constr) notation in the environment*)
@@ -33,6 +33,8 @@ val add_infix : locality_flag -> (lstring * syntax_modifier list) ->
 
 val add_notation : locality_flag -> constr_expr ->
   (lstring * syntax_modifier list) -> scope_name option -> unit
+
+val add_notation_extra_printing_rule : string -> string -> string -> unit
 
 (** Declaring delimiter keys and default scopes *)
 

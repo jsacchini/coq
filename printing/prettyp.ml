@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -38,7 +38,7 @@ type object_pr = {
   print_named_decl          : Id.t * constr option * types -> std_ppcmds;
   print_library_entry       : bool -> (object_name * Lib.node) -> std_ppcmds option;
   print_context             : bool -> int option -> Lib.library_segment -> std_ppcmds;
-  print_typed_value_in_env  : Environ.env -> Term.constr * Term.types -> Pp.std_ppcmds;
+  print_typed_value_in_env  : Environ.env -> Evd.evar_map -> Term.constr * Term.types -> Pp.std_ppcmds;
   print_eval                : Reductionops.reduction_function -> env -> Evd.evar_map -> Constrexpr.constr_expr -> unsafe_judgment -> std_ppcmds;
 }
 
@@ -79,16 +79,15 @@ let print_ref reduce ref =
 (********************************)
 (** Printing implicit arguments *)
 
-let conjugate_verb_to_be = function [_] -> "is" | _ -> "are"
-
 let pr_impl_name imp = pr_id (name_of_implicit imp)
 
 let print_impargs_by_name max = function
   | []  -> []
   | impls ->
-     [hov 0 (str (String.plural (List.length impls) "Argument") ++ spc() ++
+     let n = List.length impls in
+     [hov 0 (str (String.plural n "Argument") ++ spc() ++
       prlist_with_sep pr_comma pr_impl_name impls ++ spc() ++
-      str (conjugate_verb_to_be impls) ++ str" implicit" ++
+      str (String.conjugate_verb_to_be n) ++ str" implicit" ++
       (if max then strbrk " and maximally inserted" else mt()))]
 
 let print_one_impargs_list l =
@@ -202,8 +201,20 @@ let print_polymorphism ref =
       (if poly then "universe polymorphic"
        else if template_poly then
 	 "template universe polymorphic"
-       else "monomorphic")
-	 
+       else "not universe polymorphic")
+
+let print_primitive_record mipv = function
+  | Some (Some (_, ps,_)) ->
+    [pr_id mipv.(0).mind_typename ++ str" is primitive and has eta conversion."]
+  | _ -> []
+    
+let print_primitive ref =
+  match ref with 
+  | IndRef ind -> 
+    let mib,_ = Global.lookup_inductive ind in
+      print_primitive_record mib.mind_packets mib.mind_record
+  | _ -> []
+    
 let print_name_infos ref =
   let poly = print_polymorphism ref in
   let impls = implicits_of_global ref in
@@ -217,7 +228,7 @@ let print_name_infos ref =
        print_ref true ref; blankline]
     else
       [] in
-  poly ::
+  poly :: print_primitive ref @
   type_info_for_implicit @
   print_renames_list (mt()) renames @
   print_impargs_list (mt()) impls @
@@ -395,9 +406,9 @@ let print_located_qualid ref = print_located_qualid "object" [`TERM; `LTAC; `MOD
 (**** Printing declarations and judgments *)
 (****  Gallina layer                  *****)
 
-let gallina_print_typed_value_in_env env (trm,typ) =
-  (pr_lconstr_env env trm ++ fnl () ++
-     str "     : " ++ pr_ltype_env env typ)
+let gallina_print_typed_value_in_env env sigma (trm,typ) =
+  (pr_lconstr_env env sigma trm ++ fnl () ++
+     str "     : " ++ pr_ltype_env env sigma typ)
 
 (* To be improved; the type should be used to provide the types in the
    abstractions. This should be done recursively inside pr_lconstr, so that
@@ -434,7 +445,8 @@ let gallina_print_inductive sp =
   let mipv = mib.mind_packets in
   pr_mutual_inductive_body env sp mib ++
   with_line_skip
-    (print_inductive_renames sp mipv @
+    (print_primitive_record mipv mib.mind_record @
+     print_inductive_renames sp mipv @
      print_inductive_implicit_args sp mipv @
      print_inductive_argument_scopes sp mipv)
 
@@ -457,9 +469,12 @@ let ungeneralized_type_of_constant_type t =
 
 let print_constant with_values sep sp =
   let cb = Global.lookup_constant sp in
-  let val_0 = Declareops.body_of_constant cb in
-  let typ = ungeneralized_type_of_constant_type cb.const_type in
-  let univs = Declareops.universes_of_constant cb in
+  let val_0 = Global.body_of_constant_body cb in
+  let typ = Declareops.type_of_constant cb in
+  let typ = ungeneralized_type_of_constant_type typ in
+  let univs = Univ.instantiate_univ_context 
+    (Global.universes_of_constant_body cb)
+  in
   hov 0 (pr_polymorphic cb.const_polymorphic ++
     match val_0 with
     | None ->
@@ -540,9 +555,9 @@ let gallina_print_context with_values =
   in
   prec
 
-let gallina_print_eval red_fun env evmap _ {uj_val=trm;uj_type=typ} =
-  let ntrm = red_fun env evmap trm in
-  (str "     = " ++ gallina_print_typed_value_in_env env (ntrm,typ))
+let gallina_print_eval red_fun env sigma _ {uj_val=trm;uj_type=typ} =
+  let ntrm = red_fun env sigma trm in
+  (str "     = " ++ gallina_print_typed_value_in_env env sigma (ntrm,typ))
 
 (******************************************)
 (**** Printing abstraction layer          *)
@@ -580,15 +595,15 @@ let print_eval x = !object_pr.print_eval x
 (**** Printing declarations and judgments *)
 (****  Abstract layer                 *****)
 
-let print_typed_value x = print_typed_value_in_env (Global.env ()) x
+let print_typed_value x = print_typed_value_in_env (Global.env ()) Evd.empty x
 
-let print_judgment env {uj_val=trm;uj_type=typ} =
-  print_typed_value_in_env env (trm, typ)
+let print_judgment env sigma {uj_val=trm;uj_type=typ} =
+  print_typed_value_in_env env sigma (trm, typ)
 
-let print_safe_judgment env j =
+let print_safe_judgment env sigma j =
   let trm = Safe_typing.j_val j in
   let typ = Safe_typing.j_type j in
-  print_typed_value_in_env env (trm, typ)
+  print_typed_value_in_env env sigma (trm, typ)
 
 (*********************)
 (* *)
@@ -612,7 +627,7 @@ let print_full_pure_context () =
 	      | OpaqueDef lc ->
 		str "Theorem " ++ print_basename con ++ cut () ++
 		str " : " ++ pr_ltype typ ++ str "." ++ fnl () ++
-		str "Proof " ++ pr_lconstr (Opaqueproof.force_proof lc)
+		str "Proof " ++ pr_lconstr (Opaqueproof.force_proof (Global.opaque_tables ()) lc)
 	      | Def c ->
 		str "Definition " ++ print_basename con ++ cut () ++
 		str "  : " ++ pr_ltype typ ++ cut () ++ str " := " ++
@@ -707,8 +722,8 @@ let print_opaque_name qid =
 	  error "Not a defined constant."
     | IndRef (sp,_) ->
         print_inductive sp
-    | ConstructRef cstr ->
-	let ty = Inductiveops.type_of_constructor env (cstr,Univ.Instance.empty) in
+    | ConstructRef cstr as gr ->
+	let ty = Universes.unsafe_type_of_global gr in
 	print_typed_value (mkConstruct cstr, ty)
     | VarRef id ->
         let (_,c,ty) = lookup_named id env in

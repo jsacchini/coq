@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -50,7 +50,7 @@ open Pre_env
 (* Access to these variables is performed by the [Koffsetclosure n]       *)
 (* instruction that shifts the environment pointer of [n] fields.         *)
 
-(* This allows to represent mutual fixpoints in just one block.           *)
+(* This allows representing mutual fixpoints in just one block.           *)
 (* [Ct1 | ... | Ctn] is an array holding code pointers of the fixpoint    *)
 (* types. They are used in conversion tests (which requires that          *)
 (* fixpoint types must be convertible). Their environment is the one of   *)
@@ -289,7 +289,7 @@ let add_grab arity lbl cont =
   else Krestart :: Klabel lbl :: Kgrab (arity - 1) :: cont
 
 let add_grabrec rec_arg arity lbl cont =
-  if Int.equal arity 1 then
+  if Int.equal arity 1 && rec_arg < arity then
     Klabel lbl :: Kgrabrec 0 :: Krestart :: cont
   else
     Krestart :: Klabel lbl :: Kgrabrec rec_arg ::
@@ -422,7 +422,7 @@ let rec str_const c =
               end
 	| _ -> Bconstr c
       end
-  | Ind (ind,u) -> Bstrconst (Const_ind ind)
+  | Ind ind -> Bstrconst (Const_ind ind)
   | Construct (((kn,j),i),u) ->  
       begin
       (* spiwack: tries first to apply the run-time compilation
@@ -486,12 +486,12 @@ let rec compile_fv reloc l sz cont =
 
 (* Compiling constants *)
 
-let rec get_allias env kn =
+let rec get_allias env (kn,u as p) =
   let cb = lookup_constant kn env in
   let tps = cb.const_body_code in
     (match Cemitcodes.force tps with
-    | BCallias kn' -> get_allias env kn'
-    | _ -> kn)
+    | BCallias (kn',u') -> get_allias env (kn', Univ.subst_instance_instance u u')
+    | _ -> p)
 
 (* Compiling expressions *)
 
@@ -501,11 +501,12 @@ let rec compile_constr reloc c sz cont =
   | Evar _ -> invalid_arg "Cbytegen.compile_constr : Evar"
   | Proj (p,c) -> 
     (* compile_const reloc p [|c|] sz cont *)
-    let cb = lookup_constant p !global_env in
+    let kn = Projection.constant p in
+    let cb = lookup_constant kn !global_env in
       (* TODO: better representation of projections *)
     let pb = Option.get cb.const_proj in
     let args = Array.make pb.proj_npars mkProp in
-      compile_const reloc p Univ.Instance.empty (Array.append args [|c|]) sz cont
+      compile_const reloc kn Univ.Instance.empty (Array.append args [|c|]) sz cont
 
   | Cast(c,_,_) -> compile_constr reloc c sz cont
 
@@ -699,10 +700,10 @@ and compile_const =
                   (mkConstU (kn,u)) reloc args sz cont
   with Not_found ->
     if Int.equal nargs 0 then
-      Kgetglobal (get_allias !global_env kn) :: cont
+      Kgetglobal (get_allias !global_env (kn, u)) :: cont
     else
       comp_app (fun _ _ _ cont ->
-                   Kgetglobal (get_allias !global_env kn) :: cont)
+                   Kgetglobal (get_allias !global_env (kn,u)) :: cont)
         compile_constr reloc () args sz cont
 
 let compile env c =
@@ -728,10 +729,10 @@ let compile_constant_body env = function
   | Def sb ->
       let body = Mod_subst.force_constr sb in
       match kind_of_term body with
-	| Const kn' ->
+	| Const (kn',u) ->
 	    (* we use the canonical name of the constant*)
-	    let con= constant_of_kn (canonical_con (Univ.out_punivs kn')) in
-	      BCallias (get_allias env con)
+	    let con= constant_of_kn (canonical_con kn') in
+	      BCallias (get_allias env (con,u))
 	| _ ->
 	    let res = compile env body in
 	    let to_patch = to_memory res in
@@ -739,7 +740,7 @@ let compile_constant_body env = function
 
 (* Shortcut of the previous function used during module strengthening *)
 
-let compile_alias kn = BCallias (constant_of_kn (canonical_con kn))
+let compile_alias (kn,u) = BCallias (constant_of_kn (canonical_con kn), u)
 
 (* spiwack: additional function which allow different part of compilation of the
       31-bit integers *)

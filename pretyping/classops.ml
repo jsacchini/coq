@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -31,7 +31,7 @@ type cl_typ =
   | CL_SECVAR of variable
   | CL_CONST of constant
   | CL_IND of inductive
-  | CL_PROJ of projection
+  | CL_PROJ of constant
 
 type cl_info_typ = {
   cl_param : int
@@ -61,6 +61,7 @@ let coe_info_typ_equal c1 c2 =
 let cl_typ_ord t1 t2 = match t1, t2 with
   | CL_SECVAR v1, CL_SECVAR v2 -> Id.compare v1 v2
   | CL_CONST c1, CL_CONST c2 -> con_user_ord c1 c2
+  | CL_PROJ c1, CL_PROJ c2 -> con_user_ord c1 c2
   | CL_IND i1, CL_IND i2 -> ind_user_ord i1 i2
   | _ -> Pervasives.compare t1 t2 (** OK *)
 
@@ -195,7 +196,8 @@ let find_class_type sigma t =
   match kind_of_term t' with
     | Var id -> CL_SECVAR id, Univ.Instance.empty, args
     | Const (sp,u) -> CL_CONST sp, u, args
-    | Proj (p, c) -> CL_PROJ p, Univ.Instance.empty, c :: args
+    | Proj (p, c) when not (Projection.unfolded p) ->
+      CL_PROJ (Projection.constant p), Univ.Instance.empty, c :: args
     | Ind (ind_sp,u) -> CL_IND ind_sp, u, args
     | Prod (_,_,_) -> CL_FUN, Univ.Instance.empty, []
     | Sort _ -> CL_SORT, Univ.Instance.empty, []
@@ -293,20 +295,20 @@ let lookup_path_to_fun_from env sigma s =
 let lookup_path_to_sort_from env sigma s =
   apply_on_class_of env sigma s lookup_path_to_sort_from_class
 
-let get_coercion_constructor coe =
+let get_coercion_constructor env coe =
   let c, _ =
-    Reductionops.whd_betadeltaiota_stack (Global.env()) Evd.empty coe.coe_value
+    Reductionops.whd_betadeltaiota_stack env Evd.empty coe.coe_value
   in
   match kind_of_term c with
   | Construct (cstr,u) ->
-      (cstr, Inductiveops.constructor_nrealargs (Global.env()) cstr -1)
+      (cstr, Inductiveops.constructor_nrealargs cstr -1)
   | _ ->
       raise Not_found
 
-let lookup_pattern_path_between (s,t) =
+let lookup_pattern_path_between env (s,t) =
   let i = inductive_class_of s in
   let j = inductive_class_of t in
-  List.map get_coercion_constructor (ClPairMap.find (i,j) !inheritance_graph)
+  List.map (get_coercion_constructor env) (ClPairMap.find (i,j) !inheritance_graph)
 
 (* coercion_value : coe_index -> unsafe_judgment * bool *)
 
@@ -397,7 +399,7 @@ type coercion = {
   coercion_params : int;
 }
 
-(* Calcul de l'arité d'une classe *)
+(* Computation of the class arity *)
 
 let reference_arity_length ref =
   let t = Universes.unsafe_type_of_global ref in
@@ -405,7 +407,7 @@ let reference_arity_length ref =
 
 let projection_arity_length p =
   let len = reference_arity_length (ConstRef p) in
-  let pb = Environ.lookup_projection p (Global.env ()) in 
+  let pb = Environ.lookup_projection (Projection.make p false) (Global.env ()) in 
     len - pb.Declarations.proj_npars
 
 let class_params = function
@@ -472,6 +474,7 @@ let subst_coercion (subst, c) =
 let discharge_cl = function
   | CL_CONST kn -> CL_CONST (Lib.discharge_con kn)
   | CL_IND ind -> CL_IND (Lib.discharge_inductive ind)
+  | CL_PROJ p -> CL_PROJ (Lib.discharge_con p)
   | cl -> cl
 
 let discharge_coercion (_, c) =

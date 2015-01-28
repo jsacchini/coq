@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -41,9 +41,6 @@ val is_empty : 'a t -> bool
 
 val peek : 'a t -> ('a , 'a t) u
 (** Return the head and the tail of a stream, if any. *)
-
-val is_val : 'a t -> bool
-(** Check if the head has already been evaluated. *)
 
 (** {6 Standard operations}
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -28,9 +28,9 @@ open Tacticals.New
 open Tactics
 open Decl_kinds
 
-let no_inductive_inconstr env constr =
+let no_inductive_inconstr env sigma constr =
   (str "Cannot recognize an inductive predicate in " ++
-     pr_lconstr_env env constr ++
+     pr_lconstr_env env sigma constr ++
      str "." ++ spc () ++ str "If there is one, may be the structure of the arity" ++
      spc () ++ str "or of the type of constructors" ++ spc () ++
      str "is hidden by constant definitions.")
@@ -181,7 +181,7 @@ let inversion_scheme env sigma t sort dep_option inv_op =
   let ind =
     try find_rectype env sigma i
     with Not_found ->
-      errorlabstrm "inversion_scheme" (no_inductive_inconstr env i)
+      errorlabstrm "inversion_scheme" (no_inductive_inconstr env sigma i)
   in
   let (invEnv,invGoal) =
     compute_first_inversion_scheme env sigma ind sort dep_option
@@ -237,12 +237,12 @@ let add_inversion_lemma name env sigma t sort dep inv_op =
 
 let add_inversion_lemma_exn na com comsort bool tac =
   let env = Global.env () and evd = ref Evd.empty in
-  let c = Constrintern.interp_type_evars evd env com in
+  let c = Constrintern.interp_type_evars env evd com in
   let sigma, sort = Pretyping.interp_sort !evd comsort in
   try
     add_inversion_lemma na env sigma c sort bool tac
   with
-    |   UserError ("Case analysis",s) -> (* référence à Indrec *)
+    |   UserError ("Case analysis",s) -> (* Reference to Indrec *)
 	  errorlabstrm "Inv needs Nodep Prop Set" s
 
 (* ================================= *)
@@ -261,12 +261,12 @@ let lemInv id c gls =
     | UserError (a,b) ->
 	 errorlabstrm "LemInv"
 	   (str "Cannot refine current goal with the lemma " ++
-	      pr_lconstr_env (Global.env()) c)
+	      pr_lconstr_env (Refiner.pf_env gls) (Refiner.project gls) c)
 
 let lemInv_gen id c = try_intros_until (fun id -> Proofview.V82.tactic (lemInv id c)) id
 
 let lemInvIn id c ids =
-  Proofview.Goal.enter begin fun gl ->
+  Proofview.Goal.nf_enter begin fun gl ->
     let hyps = List.map (fun id -> pf_get_hyp id gl) ids in
     let intros_replace_ids =
       let concl = Proofview.Goal.concl gl in

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -18,10 +18,18 @@ open Tacinterp
 
 (** TODO: document and clean me! *)
 
+type unary_strategy = 
+    Subterms | Subterm | Innermost | Outermost
+  | Bottomup | Topdown | Progress | Try | Any | Repeat
+
+type binary_strategy = 
+  | Compose | Choice
+
 type ('constr,'redexpr) strategy_ast = 
   | StratId | StratFail | StratRefl
-  | StratUnary of string * ('constr,'redexpr) strategy_ast
-  | StratBinary of string * ('constr,'redexpr) strategy_ast * ('constr,'redexpr) strategy_ast
+  | StratUnary of unary_strategy * ('constr,'redexpr) strategy_ast
+  | StratBinary of binary_strategy 
+    * ('constr,'redexpr) strategy_ast * ('constr,'redexpr) strategy_ast
   | StratConstr of 'constr * bool
   | StratTerms of 'constr list
   | StratHints of bool * string
@@ -42,10 +50,13 @@ type rewrite_result_info = {
   rew_evars : evars;
 }
 
-type rewrite_result = rewrite_result_info option
+type rewrite_result =
+| Fail
+| Identity
+| Success of rewrite_result_info
 
 type 'a pure_strategy = 'a -> Environ.env -> Id.t list -> constr -> types ->
-  (bool (* prop *) * constr option) -> evars -> 'a * rewrite_result option
+  (bool (* prop *) * constr option) -> evars -> 'a * rewrite_result
 
 type strategy = unit pure_strategy
 
@@ -54,15 +65,13 @@ val strategy_of_ast : (glob_constr_and_expr, raw_red_expr) strategy_ast -> strat
 val map_strategy : ('a -> 'b) -> ('c -> 'd) ->
   ('a, 'c) strategy_ast -> ('b, 'd) strategy_ast
 
+(** Entry point for user-level "rewrite_strat" *)
 val cl_rewrite_clause_strat : strategy -> Id.t option -> tactic
 
+(** Entry point for user-level "setoid_rewrite" *)
 val cl_rewrite_clause :
   interp_sign * (glob_constr_and_expr * glob_constr_and_expr bindings) ->
   bool -> Locus.occurrences -> Id.t option -> tactic
-
-val cl_rewrite_clause_newtac' :
-  interp_sign * (glob_constr_and_expr * glob_constr_and_expr bindings) ->
-  bool -> Locus.occurrences -> Id.t option -> unit Proofview.tactic
 
 val is_applied_rewrite_relation :
   env -> evar_map -> Context.rel_context -> constr -> types option
@@ -105,6 +114,4 @@ val apply_strategy :
   Names.Id.t list ->
   Term.constr ->
   bool * Term.constr ->
-  evars ->
-  (rewrite_proof * evars * Term.constr * Term.constr * Term.constr)
-    option option
+  evars -> rewrite_result

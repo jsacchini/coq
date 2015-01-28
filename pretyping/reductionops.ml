@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -61,7 +61,7 @@ module ReductionBehaviour = struct
   let discharge = function
     | _,(ReqGlobal (ConstRef c, req), (_, b)) ->
        let c' = pop_con c in
-       let vars, _ctx = Lib.section_segment_of_constant c in
+       let vars, _subst, _ctx = Lib.section_segment_of_constant c in
        let extra = List.length vars in
        let nargs' = if b.b_nargs < 0 then b.b_nargs else b.b_nargs + extra in
        let recargs' = List.map ((+) extra) b.b_recargs in
@@ -110,7 +110,7 @@ module ReductionBehaviour = struct
        let never = List.mem `ReductionNeverUnfold flags in
        let nomatch = List.mem `ReductionDontExposeCase flags in
        let pp_nomatch = spc() ++ if nomatch then
-				   str "avoiding to expose match constructs" else str"" in
+				   str "but avoid exposing match constructs" else str"" in
        let pp_recargs = spc() ++ str "when the " ++
 			  pr_enum (fun x -> pr_nth (x+1)) recargs ++ str (String.plural (List.length recargs) " argument") ++
 			  str (String.plural (if List.length recargs >= 2 then 1 else 2) " evaluate") ++
@@ -144,6 +144,7 @@ module Cst_stack = struct
   type t = (constr * constr list * (int * constr array) list)  list
 
   let empty = []
+  let is_empty = CList.is_empty
 
   let sanity x y =
     assert(Term.eq_constr x y)
@@ -173,6 +174,10 @@ module Cst_stack = struct
     | (cst,params,[])::_ -> Some(cst,params)
     | _ -> None
 
+  let reference t = match best_cst t with
+    | Some (c, _) when Term.isConst c -> Some (fst (Term.destConst c))
+    | _ -> None
+
   (** [best_replace d cst_l c] makes the best replacement for [d]
       by [cst_l] in [c] *)
   let best_replace d cst_l c =
@@ -189,7 +194,7 @@ module Cst_stack = struct
     let p_c = Termops.print_constr in
     prlist_with_sep pr_semicolon
       (fun (c,params,args) ->
-	hov 1 (p_c c ++ spc () ++ pr_sequence p_c params ++ spc () ++ str "(args:" ++
+	hov 1 (str"(" ++ p_c c ++ str ")" ++ spc () ++ pr_sequence p_c params ++ spc () ++ str "(args:" ++
 		 pr_sequence (fun (i,el) -> prvect_with_sep spc p_c (Array.sub el i (Array.length el - i))) args ++
 		 str ")")) l
 end
@@ -201,16 +206,16 @@ sig
   type 'a app_node
   val pr_app_node : ('a -> Pp.std_ppcmds) -> 'a app_node -> Pp.std_ppcmds
 
-  type 'a cst_member = 
+  type cst_member =
     | Cst_const of pconstant
-    | Cst_proj of projection * 'a
+    | Cst_proj of projection
 
   type 'a member =
   | App of 'a app_node
   | Case of case_info * 'a * 'a array * Cst_stack.t
-  | Proj of int * int * projection
+  | Proj of int * int * projection * Cst_stack.t
   | Fix of fixpoint * 'a t * Cst_stack.t
-  | Cst of 'a cst_member * int * int list * 'a t * Cst_stack.t
+  | Cst of cst_member * int * int list * 'a t * Cst_stack.t
   | Shift of int
   | Update of 'a
   and 'a t = 'a member list
@@ -230,6 +235,7 @@ sig
   val strip_app : 'a t -> 'a t * 'a t
   val strip_n_app : int -> 'a t -> ('a t * 'a * 'a t) option
   val not_purely_applicative : 'a t -> bool
+  val will_expose_iota : 'a t -> bool
   val list_of_app_stack : constr t -> constr list option
   val assign : 'a t -> int -> 'a -> 'a t
   val args_size : 'a t -> int
@@ -255,16 +261,16 @@ struct
 		     )
 
 
-  type 'a cst_member = 
+  type cst_member =
     | Cst_const of pconstant
-    | Cst_proj of projection * 'a
+    | Cst_proj of projection
 
   type 'a member =
   | App of 'a app_node
   | Case of Term.case_info * 'a * 'a array * Cst_stack.t
-  | Proj of int * int * projection
+  | Proj of int * int * projection * Cst_stack.t
   | Fix of fixpoint * 'a t * Cst_stack.t
-  | Cst of 'a cst_member * int * int list * 'a t * Cst_stack.t
+  | Cst of cst_member * int * int list * 'a t * Cst_stack.t
   | Shift of int
   | Update of 'a
   and 'a t = 'a member list
@@ -278,9 +284,9 @@ struct
        str "ZCase(" ++
 	 prvect_with_sep (pr_bar) pr_c br
        ++ str ")"
-    | Proj (n,m,p) ->
+    | Proj (n,m,p,cst) ->
       str "ZProj(" ++ int n ++ pr_comma () ++ int m ++
-	pr_comma () ++ pr_con p ++ str ")"
+	pr_comma () ++ pr_con (Projection.constant p) ++ str ")"
     | Fix (f,args,cst) ->
        str "ZFix(" ++ Termops.pr_fix Termops.print_constr f
        ++ pr_comma () ++ pr pr_c args ++ str ")"
@@ -296,13 +302,14 @@ struct
     prlist_with_sep pr_semicolon (fun x -> hov 1 (pr_member pr_c x)) l
 
   and pr_cst_member pr_c c =
-    let open Pp in 
+    let open Pp in
       match c with
-      | Cst_const (c, u) -> 
+      | Cst_const (c, u) ->
 	if Univ.Instance.is_empty u then Constant.print c
-	else str"(" ++ Constant.print c ++ str ", " ++ Univ.Instance.pr u ++ str")"
-      | Cst_proj (p, c) ->
-	pr_c c ++ str".(" ++ Constant.print p ++ str")"
+	else str"(" ++ Constant.print c ++ str ", " ++ 
+	  Univ.Instance.pr Univ.Level.pr u ++ str")"
+      | Cst_proj p ->
+	str".(" ++ Constant.print (Projection.constant p) ++ str")"
 
   let empty = []
   let is_empty = CList.is_empty
@@ -324,12 +331,12 @@ struct
     else (l.(j), sk)
 
   let equal f f_fix sk1 sk2 =
-    let equal_cst_member x lft1 y lft2 = 
+    let equal_cst_member x lft1 y lft2 =
       match x, y with
       | Cst_const (c1,u1), Cst_const (c2, u2) ->
 	Constant.equal c1 c2 && Univ.Instance.equal u1 u2
-      | Cst_proj (p1,c1), Cst_proj (p2,c2) ->
-	Constant.equal p1 p2 && f (c1,lft1) (c2,lft2)
+      | Cst_proj p1, Cst_proj p2 ->
+	Constant.equal (Projection.constant p1) (Projection.constant p2)
       | _, _ -> false
     in
     let rec equal_rec sk1 lft1 sk2 lft2  =
@@ -346,8 +353,9 @@ struct
 	if f (t1,lft1) (t2,lft2) && CArray.equal (fun x y -> f (x,lft1) (y,lft2)) a1 a2
 	then equal_rec s1 lft1 s2 lft2
 	else None
-      | (Proj (n1,m1,p)::s1, Proj(n2,m2,p2)::s2) ->
-	if Int.equal n1 n2 && Int.equal m1 m2 && Names.Constant.CanOrd.equal p p2
+      | (Proj (n1,m1,p,_)::s1, Proj(n2,m2,p2,_)::s2) ->
+	if Int.equal n1 n2 && Int.equal m1 m2
+	  && Constant.equal (Projection.constant p) (Projection.constant p2)
 	then equal_rec s1 lft1 s2 lft2
 	else None
       | Fix (f1,s1,_) :: s1', Fix (f2,s2,_) :: s2' ->
@@ -375,7 +383,7 @@ struct
       | (_, App (i,_,j)::s2) -> compare_rec (bal - j - 1 + i) stk1 s2
       | (Case(c1,_,_,_)::s1, Case(c2,_,_,_)::s2) ->
         Int.equal bal 0 (* && c1.ci_ind  = c2.ci_ind *) && compare_rec 0 s1 s2
-      | (Proj (n1,m1,p)::s1, Proj(n2,m2,p2)::s2) ->
+      | (Proj (n1,m1,p,_)::s1, Proj(n2,m2,p2,_)::s2) ->
 	Int.equal bal 0 && compare_rec 0 s1 s2
       | (Fix(_,a1,_)::s1, Fix(_,a2,_)::s2) ->
         Int.equal bal 0 && compare_rec 0 a1 a2 && compare_rec 0 s1 s2
@@ -402,7 +410,7 @@ struct
 	aux (fold_array
 	       (f o (Vars.lift lft1 t1) (Vars.lift lft2 t2))
 	       a1 a2) lft1 q1 lft2 q2
-      | Proj (n1,m1,p1) :: q1, Proj (n2,m2,p2) :: q2 ->
+      | Proj (n1,m1,p1,_) :: q1, Proj (n2,m2,p2,_) :: q2 ->
 	aux o lft1 q1 lft2 q2
       | Fix ((_,(_,a1,b1)),s1,_) :: q1, Fix ((_,(_,a2,b2)),s2,_) :: q2 ->
 	let (o',lft1',lft2') = aux (fold_array (fold_array o b1 b2) a1 a2)
@@ -418,7 +426,7 @@ struct
 
   let rec map f x = List.map (function
 			       | Update _ -> assert false
-			       | (Proj (_,_,_) | Shift _) as e -> e
+			       | (Proj (_,_,_,_) | Shift _) as e -> e
 			       | App (i,a,j) ->
 				  let le = j - i + 1 in
 				  App (0,Array.map f (Array.sub a i le), le-1)
@@ -462,6 +470,12 @@ struct
 
   let not_purely_applicative args =
     List.exists (function (Fix _ | Case _ | Proj _ | Cst _) -> true | _ -> false) args
+  let will_expose_iota args =
+    List.exists
+      (function (Fix (_,_,l) | Case (_,_,_,l) |
+		 Proj (_,_,_,l) | Cst (_,_,_,_,l)) when Cst_stack.is_empty l -> true | _ -> false)
+      args
+
   let list_of_app_stack s =
     let rec aux = function
       | App (i,a,j) :: s ->
@@ -513,9 +527,13 @@ struct
 	| _ -> def
     in List.fold_left (aux sk) s l
 
-  let constr_of_cst_member = function
-    | Cst_const (c, u) -> mkConstU (c,u)
-    | Cst_proj (p, c) -> mkProj (p, c)
+  let constr_of_cst_member f sk =
+    match f with
+    | Cst_const (c, u) -> mkConstU (c,u), sk
+    | Cst_proj p -> 
+      match decomp sk with
+      | Some (hd, sk) -> mkProj (p, hd), sk
+      | None -> assert false
 
   let rec zip ?(refold=false) = function
     | f, [] -> f
@@ -532,11 +550,13 @@ struct
   | f, (Fix (fix,st,_)::s) -> zip ~refold
     (mkFix fix, st @ (append_app [|f|] s))
   | f, (Cst (cst,_,_,params,cst_l)::s) when refold ->
-    zip ~refold (best_state (constr_of_cst_member cst,params @ (append_app [|f|] s)) cst_l)
+    zip ~refold (best_state (constr_of_cst_member cst (params @ (append_app [|f|] s))) cst_l)
   | f, (Cst (cst,_,_,params,_)::s) ->
-    zip ~refold (constr_of_cst_member cst,params @ (append_app [|f|] s))
+    zip ~refold (constr_of_cst_member cst (params @ (append_app [|f|] s)))
   | f, (Shift n::s) -> zip ~refold (lift n f, s)
-  | f, (Proj (n,m,p)::s) -> zip ~refold (mkProj (p,f),s)
+  | f, (Proj (n,m,p,cst_l)::s) when refold ->
+    zip ~refold (best_state (mkProj (p,f),s) cst_l)
+  | f, (Proj (n,m,p,_)::s) -> zip ~refold (mkProj (p,f),s)
   | _, (Update _::_) -> assert false
 end
 
@@ -621,7 +641,7 @@ let apply_subst recfun env cst_l t stack =
       aux (h::env) (Cst_stack.add_param h cst_l) c stacktl
     | _ -> recfun cst_l (substl env t, stack)
   in aux env cst_l t stack
-    
+
 let stacklam recfun env t stack =
   apply_subst (fun _ -> recfun) env Cst_stack.empty t stack
 
@@ -651,27 +671,27 @@ let reducible_mind_case c = match kind_of_term c with
     f x := t. End M. Definition f := u. and say goodbye to any hope
     of refolding M.f this way ...
 *)
-let magicaly_constant_of_fixbody env bd = function
+let magicaly_constant_of_fixbody env reference bd = function
   | Name.Anonymous -> bd
   | Name.Name id ->
     try
-      let cst = Nametab.locate_constant
-	(Libnames.make_qualid DirPath.empty id) in
+      let (cst_mod,cst_sect,_) = Constant.repr3 reference in
+      let cst = Constant.make3 cst_mod cst_sect (Label.of_id id) in
       let (cst, u), ctx = Universes.fresh_constant_instance env cst in
-      match constant_opt_value env (cst,u) with
+      match constant_opt_value_in env (cst,u) with
       | None -> bd
-      | Some (t,cstrs) -> 
+      | Some t ->
         let b, csts = Universes.eq_constr_universes t bd in
-	let subst = Universes.Constraints.fold (fun (l,d,r) acc -> 
-	  Univ.LMap.add (Option.get (Universe.level l)) (Option.get (Universe.level r)) acc)
-	  csts Univ.LMap.empty
-	in
-	let inst = Instance.subst_fn (fun u -> Univ.LMap.find u subst) u in
+    	let subst = Universes.Constraints.fold (fun (l,d,r) acc ->
+    	  Univ.LMap.add (Option.get (Universe.level l)) (Option.get (Universe.level r)) acc)
+    	  csts Univ.LMap.empty
+    	in
+    	let inst = Instance.subst_fn (fun u -> Univ.LMap.find u subst) u in
           if b then mkConstU (cst,inst) else bd
     with
     | Not_found -> bd
 
-let contract_cofix ?env (bodynum,(names,types,bodies as typedbodies)) =
+let contract_cofix ?env ?reference (bodynum,(names,types,bodies as typedbodies)) =
   let nbodies = Array.length bodies in
   let make_Fi j =
     let ind = nbodies-j-1 in
@@ -680,13 +700,16 @@ let contract_cofix ?env (bodynum,(names,types,bodies as typedbodies)) =
       let bd = mkCoFix (ind,typedbodies) in
       match env with
       | None -> bd
-      | Some e -> magicaly_constant_of_fixbody e bd names.(ind) in
+      | Some e ->
+        match reference with
+        | None -> bd
+        | Some r -> magicaly_constant_of_fixbody e r bd names.(ind) in
   let closure = List.init nbodies make_Fi in
   substl closure bodies.(bodynum)
 
 (** Similar to the "fix" case below *)
 let reduce_and_refold_cofix recfun env cst_l cofix sk =
-  let raw_answer = contract_cofix ~env cofix in
+  let raw_answer = contract_cofix ~env ?reference:(Cst_stack.reference cst_l) cofix in
   apply_subst
     (fun x (t,sk') -> recfun x (Cst_stack.best_replace (mkCoFix cofix) cst_l t,sk'))
     [] Cst_stack.empty raw_answer sk
@@ -705,7 +728,7 @@ let reduce_mind_case mia =
 (* contracts fix==FIX[nl;i](A1...Ak;[F1...Fk]{B1....Bk}) to produce
    Bi[Fj --> FIX[nl;j](A1...Ak;[F1...Fk]{B1...Bk})] *)
 
-let contract_fix ?env ((recindices,bodynum),(names,types,bodies as typedbodies)) =
+let contract_fix ?env ?reference ((recindices,bodynum),(names,types,bodies as typedbodies)) =
     let nbodies = Array.length recindices in
     let make_Fi j =
       let ind = nbodies-j-1 in
@@ -714,7 +737,10 @@ let contract_fix ?env ((recindices,bodynum),(names,types,bodies as typedbodies))
 	let bd = mkFix ((recindices,ind),typedbodies) in
 	match env with
 	| None -> bd
-	| Some e -> magicaly_constant_of_fixbody e bd names.(ind) in
+	| Some e ->
+          match reference with
+          | None -> bd
+          | Some r -> magicaly_constant_of_fixbody e r bd names.(ind) in
     let closure = List.init nbodies make_Fi in
     substl closure bodies.(bodynum)
 
@@ -723,7 +749,7 @@ let contract_fix ?env ((recindices,bodynum),(names,types,bodies as typedbodies))
     Other rels are directly substituted by constants "magically found from the
     context" in contract_fix *)
 let reduce_and_refold_fix recfun env cst_l fix sk =
-  let raw_answer = contract_fix ~env fix in
+  let raw_answer = contract_fix ~env ?reference:(Cst_stack.reference cst_l) fix in
   apply_subst
     (fun x (t,sk') -> recfun x (Cst_stack.best_replace (mkFix fix) cst_l t,sk'))
     [] Cst_stack.empty raw_answer sk
@@ -748,9 +774,36 @@ let fix_recarg ((recindices,bodynum),_) stack =
     It substitutes fix and cofix by the constant they come from in
     contract_* in any case .
 *)
+
+let debug_RAKAM = ref (false)
+let _ = Goptions.declare_bool_option {
+  Goptions.optsync = true; Goptions.optdepr = false;
+  Goptions.optname =
+    "Print states of the Reductionops abstract machine";
+  Goptions.optkey = ["Debug";"RAKAM"];
+  Goptions.optread = (fun () -> !debug_RAKAM);
+  Goptions.optwrite = (fun a -> debug_RAKAM:=a);
+}
+
+let equal_stacks (x, l) (y, l') =
+  let f_equal (x,lft1) (y,lft2) = Constr.equal (Vars.lift lft1 x) (Vars.lift lft2 y) in
+  let eq_fix (a,b) (c,d) = f_equal (Constr.mkFix a, b) (Constr.mkFix c, d) in
+    match Stack.equal f_equal eq_fix l l' with
+    | None -> false
+    | Some (lft1,lft2) -> f_equal (x, lft1) (y, lft2) 
+
 let rec whd_state_gen ?csts tactic_mode flags env sigma =
   let rec whrec cst_l (x, stack as s) =
+    let () = if !debug_RAKAM then
+	let open Pp in
+	pp (h 0 (str "<<" ++ Termops.print_constr x ++
+		   str "|" ++ cut () ++ Cst_stack.pr cst_l ++
+		   str "|" ++ cut () ++ Stack.pr Termops.print_constr stack ++
+		   str ">>") ++ fnl ())
+    in
     let fold () =
+      let () = if !debug_RAKAM then
+	  let open Pp in pp (str "<><><><><>" ++ fnl ()) in
       if tactic_mode then (Stack.best_state s cst_l,Cst_stack.empty) else (s,cst_l)
     in
     match kind_of_term x with
@@ -787,17 +840,11 @@ let rec whd_state_gen ?csts tactic_mode flags env sigma =
 		  if List.mem `ReductionDontExposeCase flags then
 		    let app_sk,sk = Stack.strip_app stack in
 		    let (tm',sk'),cst_l' =
-		      whrec (Cst_stack.add_cst (mkConstU const) cst_l) (body, app_sk) in
-		    let f_equal (x,lft1) (y,lft2) = Constr.equal (Vars.lift lft1 x) (Vars.lift lft2 y) in
-		    if
-		      (match Stack.equal f_equal
-			  (fun (a,b) (c,d) -> f_equal (Constr.mkFix a, b) (Constr.mkFix c, d))
-			  app_sk sk' with
-			  | None -> false
-			  | Some (lft1,lft2) -> f_equal (x, lft1) (tm', lft2)
-		      ) || Stack.not_purely_applicative sk'
-		    then fold ()
-		    else whrec cst_l' (tm', sk' @ sk)
+		      whrec (Cst_stack.add_cst (mkConstU const) cst_l) (body, app_sk)
+		    in
+		      if equal_stacks (x, app_sk) (tm', sk') || Stack.will_expose_iota sk'
+		      then fold ()
+		      else whrec cst_l' (tm', sk' @ sk)
 		  else match recargs with
 		  |[] -> (* if nargs has been specified *)
 			 (* CAUTION : the constant is NEVER refold
@@ -806,35 +853,50 @@ let rec whd_state_gen ?csts tactic_mode flags env sigma =
 		  |curr::remains -> match Stack.strip_n_app curr stack with
 		    | None -> fold ()
 		    | Some (bef,arg,s') ->
-		      whrec Cst_stack.empty (arg,Stack.Cst(Stack.Cst_const const,curr,remains,bef,cst_l)::s')
+		      whrec Cst_stack.empty 
+			(arg,Stack.Cst(Stack.Cst_const const,curr,remains,bef,cst_l)::s')
        )
-    | Proj (p, c) when Closure.RedFlags.red_set flags (Closure.RedFlags.fCONST p) ->
-      (match (lookup_constant p env).Declarations.const_proj with
-      | None -> assert false
-      | Some pb -> begin
-	let npars = pb.Declarations.proj_npars 
-	and arg = pb.Declarations.proj_arg in
-	  match ReductionBehaviour.get (Globnames.ConstRef p) with
-	  | None ->
-	    let stack' = (c, Stack.Proj (npars, arg, p) :: stack) in
-	      whrec Cst_stack.empty(* cst_l *) stack'
-	  | Some (recargs, nargs, flags) ->
-	    if (List.mem `ReductionNeverUnfold flags
-		|| (nargs > 0 && Stack.args_size stack < (nargs - (npars + 1))))
-	    then fold ()
-	    else
-	      match List.map (fun x -> x - (npars + 1)) recargs with
-	      |[] -> (* if nargs has been specified *)
-	      (* CAUTION : the constant is NEVER refold
-                 (even when it hides a (co)fix) *)
-		let stack' = (c, Stack.Proj (npars, arg, p) :: stack) in
-		  whrec Cst_stack.empty(* cst_l *) stack'
-	      | curr::remains -> match Stack.strip_n_app curr stack with
-		| None -> fold ()
-		| Some (bef,arg,s') ->
-		  whrec Cst_stack.empty 
-		    (arg,Stack.Cst(Stack.Cst_proj (p, c),curr,remains,bef,cst_l)::s')
-      end)
+    | Proj (p, c) when Closure.RedFlags.red_projection flags p ->
+      (let pb = lookup_projection p env in
+       let kn = Projection.constant p in
+       let npars = pb.Declarations.proj_npars 
+       and arg = pb.Declarations.proj_arg in
+	 if not tactic_mode then 
+	   let stack' = (c, Stack.Proj (npars, arg, p, Cst_stack.empty (*cst_l*)) :: stack) in
+	     whrec Cst_stack.empty stack'
+	 else match ReductionBehaviour.get (Globnames.ConstRef kn) with
+	 | None ->
+	   let stack' = (c, Stack.Proj (npars, arg, p, cst_l) :: stack) in
+	   let stack'', csts = whrec Cst_stack.empty stack' in
+	     if equal_stacks stack' stack'' then fold ()
+	     else stack'', csts
+	 | Some (recargs, nargs, flags) ->
+	   if (List.mem `ReductionNeverUnfold flags
+	       || (nargs > 0 && Stack.args_size stack < (nargs - (npars + 1))))
+	   then fold ()
+	   else
+	     let recargs = List.map_filter (fun x -> 
+	       let idx = x - npars in 
+		 if idx < 0 then None else Some idx) recargs
+	     in
+	       match recargs with
+	       |[] -> (* if nargs has been specified *)
+		(* CAUTION : the constant is NEVER refold
+                   (even when it hides a (co)fix) *)
+		 let stack' = (c, Stack.Proj (npars, arg, p, cst_l) :: stack) in
+		   whrec Cst_stack.empty(* cst_l *) stack'
+	       | curr::remains -> 
+		 if curr == 0 then (* Try to reduce the record argument *)
+		   whrec Cst_stack.empty 
+		     (c, Stack.Cst(Stack.Cst_proj p,curr,remains,Stack.empty,cst_l)::stack)
+		 else
+		   match Stack.strip_n_app curr stack with
+		   | None -> fold ()
+		   | Some (bef,arg,s') ->
+		     whrec Cst_stack.empty 
+		       (arg,Stack.Cst(Stack.Cst_proj p,curr,remains,
+				      Stack.append_app [|c|] bef,cst_l)::s'))
+
     | LetIn (_,b,_,c) when Closure.RedFlags.red_set flags Closure.RedFlags.fZETA ->
       apply_subst whrec [b] cst_l c stack
     | Cast (c,_,_) -> whrec cst_l (c, stack)
@@ -878,14 +940,12 @@ let rec whd_state_gen ?csts tactic_mode flags env sigma =
 	match Stack.strip_app stack with
 	|args, (Stack.Case(ci, _, lf,_)::s') ->
 	  whrec Cst_stack.empty (lf.(c-1), (Stack.tail ci.ci_npar args) @ s')
-	|args, (Stack.Proj (n,m,p)::s') ->
+	|args, (Stack.Proj (n,m,p,_)::s') ->
 	  whrec Cst_stack.empty (Stack.nth args (n+m), s')
 	|args, (Stack.Fix (f,s',cst_l)::s'') ->
 	  let x' = Stack.zip(x,args) in
 	  let out_sk = s' @ (Stack.append_app [|x'|] s'') in
-	  if tactic_mode
-	  then reduce_and_refold_fix whrec env cst_l f out_sk
-	  else whrec Cst_stack.empty (contract_fix f, out_sk)
+	  reduce_and_refold_fix whrec env cst_l f out_sk
 	|args, (Stack.Cst (const,curr,remains,s',cst_l) :: s'') ->
 	  let x' = Stack.zip(x,args) in
 	  begin match remains with
@@ -897,8 +957,15 @@ let rec whd_state_gen ?csts tactic_mode flags env sigma =
 	      | Some body ->
 		whrec (Cst_stack.add_cst (mkConstU const) cst_l)
 		  (body, s' @ (Stack.append_app [|x'|] s'')))
-	    | Stack.Cst_proj (p, c) ->
-	      whrec Cst_stack.empty (mkProj (p, c), s' @ (Stack.append_app [|x'|] s'')))
+	    | Stack.Cst_proj p ->
+	      let pb = lookup_projection p env in
+	      let npars = pb.Declarations.proj_npars in
+	      let narg = pb.Declarations.proj_arg in
+	      let stack = s' @ (Stack.append_app [|x'|] s'') in
+		match Stack.strip_n_app 0 stack with
+		| None -> assert false
+		| Some (_,arg,s'') ->
+		  whrec Cst_stack.empty (arg, Stack.Proj (npars,narg,p,cst_l) :: s''))
 	  | next :: remains' -> match Stack.strip_n_app (next-curr-1) s'' with
 	    | None -> fold ()
 	    | Some (bef,arg,s''') ->
@@ -914,9 +981,7 @@ let rec whd_state_gen ?csts tactic_mode flags env sigma =
       if Closure.RedFlags.red_set flags Closure.RedFlags.fIOTA then
 	match Stack.strip_app stack with
 	|args, (Stack.Case(ci, _, lf,_)::s') ->
-	  if tactic_mode
-	  then reduce_and_refold_cofix whrec env cst_l cofix stack
-	  else whrec Cst_stack.empty (contract_cofix cofix, stack)
+	  reduce_and_refold_cofix whrec env cst_l cofix stack
 	|_ -> fold ()
       else fold ()
 
@@ -953,11 +1018,11 @@ let local_whd_state_gen flags sigma =
 	| _ -> s)
       | _ -> s)
 
-    | Proj (p,c) when Closure.RedFlags.red_set flags (Closure.RedFlags.fCONST p) ->
-      (match (lookup_constant p (Global.env ())).Declarations.const_proj with
-      | None -> assert false
-      | Some pb -> whrec (c, Stack.Proj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, p)
-        :: stack))
+    | Proj (p,c) when Closure.RedFlags.red_projection flags p ->
+      (let pb = lookup_projection p (Global.env ()) in
+	 whrec (c, Stack.Proj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, 
+			       p, Cst_stack.empty)
+           :: stack))
 
     | Case (ci,p,d,lf) ->
       whrec (d, Stack.Case (ci,p,lf,Cst_stack.empty) :: stack)
@@ -982,7 +1047,7 @@ let local_whd_state_gen flags sigma =
 	match Stack.strip_app stack with
 	|args, (Stack.Case(ci, _, lf,_)::s') ->
 	  whrec (lf.(c-1), (Stack.tail ci.ci_npar args) @ s')
-	|args, (Stack.Proj (n,m,p) :: s') ->
+	|args, (Stack.Proj (n,m,p,_) :: s') ->
 	  whrec (Stack.nth args (n+m), s')
 	|args, (Stack.Fix (f,s',cst)::s'') ->
 	  let x' = Stack.zip(x,args) in
@@ -1106,7 +1171,9 @@ let whd_zeta c = Stack.zip (local_whd_state_gen zeta Evd.empty (c,Stack.empty))
 let rec whd_evar sigma c =
   match kind_of_term c with
     | Evar ev ->
-        (match safe_evar_value sigma ev with
+        let (evk, args) = ev in
+        let args = Array.map (fun c -> whd_evar sigma c) args in
+        (match safe_evar_value sigma (evk, args) with
             Some c -> whd_evar sigma c
           | None -> c)
     | Sort (Type u) -> 
@@ -1199,10 +1266,10 @@ let check_conv ?(pb=Reduction.CUMUL) ?(ts=full_transparent_state) env sigma x y 
     | Univ.UniverseInconsistency _ -> false
     | e when is_anomaly e -> error "Conversion test raised an anomaly"
 
-let sigma_compare_sorts pb s0 s1 sigma =
+let sigma_compare_sorts env pb s0 s1 sigma =
   match pb with
-  | Reduction.CONV -> Evd.set_eq_sort sigma s0 s1
-  | Reduction.CUMUL -> Evd.set_leq_sort sigma s0 s1
+  | Reduction.CONV -> Evd.set_eq_sort env sigma s0 s1
+  | Reduction.CUMUL -> Evd.set_leq_sort env sigma s0 s1
     
 let sigma_compare_instances flex i0 i1 sigma =
   try Evd.set_eq_instances ~flex sigma i0 i1
@@ -1430,13 +1497,11 @@ let whd_betaiota_deltazeta_for_iota_state ts env sigma csts s =
 	let (t_o,stack_o),csts_o = whd_state_gen ~csts:csts' false
 	  (Closure.RedFlags.red_add_transparent betadeltaiota ts) env sigma (t,args) in
 	if isConstruct t_o then whrec csts_o (t_o, stack_o@stack') else s,csts'
-      |args, (Stack.Proj (n,m,p) :: stack'' as stack') ->
+      |args, (Stack.Proj (n,m,p,_) :: stack'') ->
 	let (t_o,stack_o),csts_o = whd_state_gen ~csts:csts' false
 	  (Closure.RedFlags.red_add_transparent betadeltaiota ts) env sigma (t,args) in
 	if isConstruct t_o then
-	  if Closure.is_transparent_constant ts p then
-	    whrec Cst_stack.empty (* csts_o *) (Stack.nth stack_o (n+m), stack'')
-	  else (* Won't unfold *) (whd_betaiota_state sigma (t_o, stack_o@stack'),csts')
+	  whrec Cst_stack.empty (Stack.nth stack_o (n+m), stack'')
 	else s,csts'
       |_, ((Stack.App _| Stack.Shift _|Stack.Update _|Stack.Cst _) :: _|[]) -> s,csts'
   in whrec csts s

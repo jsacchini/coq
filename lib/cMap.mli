@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -12,6 +12,13 @@ module type OrderedType =
 sig
   type t
   val compare : t -> t -> int
+end
+
+module type MonadS =
+sig
+  type +'a t
+  val return : 'a -> 'a t
+  val (>>=) : 'a t -> ('a -> 'b t) -> 'b t
 end
 
 module type S = Map.S
@@ -54,10 +61,18 @@ sig
   module Unsafe :
   sig
     val map : (key -> 'a -> key * 'b) -> 'a t -> 'b t
-    (** As the usual [map], but also allows to modify the key of a binding.
+    (** As the usual [map], but also allows modifying the key of a binding.
         It is required that the mapping function [f] preserves key equality,
         i.e.: for all (k : key) (x : 'a), compare (fst (f k x)) k = 0. *)
   end
+
+  module Monad(M : MonadS) :
+  sig
+    val fold : (key -> 'a -> 'b -> 'b M.t) -> 'a t -> 'b -> 'b M.t
+    val fold_left : (key -> 'a -> 'b -> 'b M.t) -> 'a t -> 'b -> 'b M.t
+    val fold_right : (key -> 'a -> 'b -> 'b M.t) -> 'a t -> 'b -> 'b M.t
+  end
+  (** Fold operators parameterized by any monad. *)
 
 end
 

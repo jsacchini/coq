@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -160,7 +160,7 @@ let typecheck_arity env params inds =
         if ind.mind_nrealargs <> nrealargs then
              failwith "bad number of real inductive arguments";
 	let nrealargs_ctxt = rel_context_length ar_ctxt - nparamdecls in
-        if ind.mind_nrealargs_ctxt <> nrealargs_ctxt then
+        if ind.mind_nrealdecls <> nrealargs_ctxt then
              failwith "bad length of real inductive arguments signature";
 	(* We do not need to generate the universe of full_arity; if
 	   later, after the validation of the inductive definition,
@@ -211,7 +211,7 @@ let allowed_sorts issmall isunit s =
 
   (* Unitary/empty Prop: elimination to all sorts are realizable *)
   (* unless the type is large. If it is large, forbids large elimination *)
-  (* which otherwise allows to simulate the inconsistent system Type:Type *)
+  (* which otherwise allows simulating the inconsistent system Type:Type *)
   | InProp when isunit -> if issmall then all_sorts else small_sorts
 
   (* Other propositions: elimination only to Prop *)

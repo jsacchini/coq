@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -111,7 +111,7 @@ let fold_constr_expr_with_binders g f n acc = function
       (* The following is an approximation: we don't know exactly if
          an ident is binding nor to which subterms bindings apply *)
       let acc = List.fold_left (f n) acc (l@List.flatten ll) in
-      List.fold_left (fun acc bl -> fold_local_binders g f n acc (CHole (Loc.ghost,None,None)) bl) acc bll
+      List.fold_left (fun acc bl -> fold_local_binders g f n acc (CHole (Loc.ghost,None,IntroAnonymous,None)) bl) acc bll
   | CGeneralization (_,_,_,c) -> f n acc c
   | CDelimiters (loc,_,a) -> f n acc a
   | CHole _ | CEvar _ | CPatVar _ | CSort _ | CPrim _ | CRef _ ->

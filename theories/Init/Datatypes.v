@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -151,7 +151,7 @@ Inductive option (A:Type) : Type :=
   | Some : A -> option A
   | None : option A.
 
-Arguments None [A].
+Arguments None {A}.
 
 Definition option_map (A B:Type) (f:A->B) (o : option A) : option B :=
   match o with
@@ -224,7 +224,7 @@ Inductive list (A : Type) : Type :=
  | nil : list A
  | cons : A -> list A -> list A.
 
-Arguments nil [A].
+Arguments nil {A}.
 Infix "::" := cons (at level 60, right associativity) : list_scope.
 Delimit Scope list_scope with list.
 Bind Scope list_scope with list.
@@ -342,8 +342,8 @@ Arguments identity_rect [A] a P f y i.
 
 (** Identity type *)
 
-Polymorphic Definition ID := forall A:Type, A -> A.
-Polymorphic Definition id : ID := fun A x => x.
+Definition ID := forall A:Type, A -> A.
+Definition id : ID := fun A x => x.
 
 Definition IDProp := forall A:Prop, A -> A.
 Definition idProp : IDProp := fun A x => x.

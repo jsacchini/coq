@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -22,6 +22,5 @@ Declare ML Module "decl_mode_plugin".
 Declare ML Module "cc_plugin".
 Declare ML Module "ground_plugin".
 Declare ML Module "recdef_plugin".
-Declare ML Module "xml_plugin".
 (* Default substrings not considered by queries like SearchAbout *)
 Add Search Blacklist "_admitted" "_subproof" "Private_".

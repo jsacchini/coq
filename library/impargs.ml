@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -77,7 +77,7 @@ let with_implicits flags f x =
   with reraise ->
     let reraise = Errors.push reraise in
     let () = implicit_args := oflags in
-    raise reraise
+    iraise reraise
 
 let set_maximality imps b =
   (* Force maximal insertion on ending implicits (compatibility) *)
@@ -378,7 +378,9 @@ let set_manual_implicits env flags enriching autoimps l =
           l, imp, m
       in
       let imps' = merge (k+1) l' imps in
-      let m = Option.map (fun (b,f) -> set_maximality imps' b, f) m in
+      let m = Option.map (fun (b,f) -> 
+	(* match imp with Some Manual -> (b,f) *)
+	(* | _ ->  *)set_maximality imps' b, f) m in
       Option.map (set_implicit id imp) m :: imps'
   | (Anonymous,imp)::imps ->
       let l', forced = try_forced k l in
@@ -408,10 +410,6 @@ let compute_constant_implicits flags manual cst =
   let ty = Typeops.type_of_constant_type env cb.const_type in
   let impls = compute_semi_auto_implicits env flags manual ty in
     impls
-    (* match cb.const_proj with *)
-    (* | None -> impls *)
-    (* | Some {proj_npars = n} ->  *)
-    (* List.map (fun (x,args) -> x, CList.skipn_at_least n args) impls *)
 
 (*s Inductives and constructors. Their implicit arguments are stored
    in an array, indexed by the inductive number, of pairs $(i,v)$ where
@@ -525,10 +523,10 @@ let impls_of_context ctx =
   List.rev_map map (List.filter is_set ctx)
 
 let section_segment_of_reference = function
-  | ConstRef con -> section_segment_of_constant con
+  | ConstRef con -> pi1 (section_segment_of_constant con)
   | IndRef (kn,_) | ConstructRef ((kn,_),_) ->
-      section_segment_of_mutual_inductive kn
-  | _ -> [], Univ.UContext.empty
+    pi1 (section_segment_of_mutual_inductive kn)
+  | _ -> []
 
 let adjust_side_condition p = function
   | LessArgsThan n -> LessArgsThan (n+p)
@@ -543,36 +541,25 @@ let discharge_implicits (_,(req,l)) =
   | ImplLocal -> None
   | ImplInteractive (ref,flags,exp) ->
     (try
-      let vars,_ = section_segment_of_reference ref in
-      (* let isproj =  *)
-      (* 	 match ref with *)
-      (* 	 | ConstRef cst -> is_projection cst (Global.env ()) *)
-      (* 	 | _ -> false *)
-      (* in *)
+      let vars = section_segment_of_reference ref in
       let ref' = if isVarRef ref then ref else pop_global_reference ref in
       let extra_impls = impls_of_context vars in
-      let l' = 
-	(* if isproj then [ref',snd (List.hd l)] *)
-	(* else *)
-	  [ref', List.map (add_section_impls vars extra_impls) (snd (List.hd l))] in
+      let l' = [ref', List.map (add_section_impls vars extra_impls) (snd (List.hd l))] in
       Some (ImplInteractive (ref',flags,exp),l')
     with Not_found -> (* ref not defined in this section *) Some (req,l))
   | ImplConstant (con,flags) ->
     (try
       let con' = pop_con con in
-      let vars,_ = section_segment_of_constant con in
+      let vars,_,_ = section_segment_of_constant con in
       let extra_impls = impls_of_context vars in
-      let newimpls = 
-	(* if is_projection con (Global.env()) then (snd (List.hd l)) *)
-	(* else *) List.map (add_section_impls vars extra_impls) (snd (List.hd l))
-      in
+      let newimpls = List.map (add_section_impls vars extra_impls) (snd (List.hd l)) in
       let l' = [ConstRef con',newimpls] in
 	Some (ImplConstant (con',flags),l')
     with Not_found -> (* con not defined in this section *) Some (req,l))
   | ImplMutualInductive (kn,flags) ->
     (try
       let l' = List.map (fun (gr, l) ->
-	let vars,_ = section_segment_of_reference gr in
+	let vars = section_segment_of_reference gr in
 	let extra_impls = impls_of_context vars in
 	((if isVarRef gr then gr else pop_global_reference gr),
 	 List.map (add_section_impls vars extra_impls) l)) l

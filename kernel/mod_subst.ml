@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -342,13 +342,15 @@ let rec map_kn f f' c =
   let func = map_kn f f' in
     match kind_of_term c with
       | Const kn -> (try snd (f' kn) with No_subst -> c)
-      | Proj (kn,t) -> 
-          let kn' = try fst (f' (kn,Univ.Instance.empty))
-	    with No_subst -> kn 
+      | Proj (p,t) -> 
+          let p' = 
+	    try
+	      Projection.map (fun kn -> fst (f' (kn,Univ.Instance.empty))) p
+	    with No_subst -> p
 	  in
 	  let t' = func t in
-	    if kn' == kn && t' == t then c
-	    else mkProj (kn', t')
+	    if p' == p && t' == t then c
+	    else mkProj (p', t')
       | Ind ((kn,i),u) ->
 	  let kn' = f kn in
 	  if kn'==kn then c else mkIndU ((kn',i),u)

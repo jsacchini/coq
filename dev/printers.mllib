@@ -1,5 +1,6 @@
 Coq_config
 
+Terminal
 Hook
 Canary
 Hashset
@@ -20,6 +21,8 @@ Flags
 Control
 Loc
 Serialize
+Stateid
+Feedback
 Pp
 Segmenttree
 Unicodetable
@@ -107,6 +110,7 @@ Goptions
 Decls
 Heads
 Assumptions
+Keys
 Locusops
 Miscops
 Universes
@@ -117,6 +121,7 @@ Glob_ops
 Redops
 Reductionops
 Inductiveops
+Arguments_renaming
 Nativenorm
 Retyping
 Cbv
@@ -125,10 +130,9 @@ Evarutil
 Evarsolve
 Recordops
 Evarconv
-Arguments_renaming
 Typing
 Patternops
-ConstrMatching
+Constr_matching
 Find_subterm
 Tacred
 Classops
@@ -150,6 +154,8 @@ Tok
 Lexer
 Ppextend
 Pputils
+Ppstyle
+Ppannotation
 Stdarg
 Constrarg
 Constrexpr_ops
@@ -174,7 +180,7 @@ Refiner
 Clenv
 Evar_refiner
 Proof_errors
-Proofview_gen
+Logic_monad
 Proofview_monad
 Proofview
 Proof
@@ -189,6 +195,12 @@ Pptactic
 Ppdecl_proof
 Egramml
 Egramcoq
+Tacsubst
+Tacenv
+Trie
+Dn
+Btermdn
+Hints
 Himsg
 Cerrors
 Locality

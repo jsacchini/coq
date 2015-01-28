@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -19,7 +19,7 @@ type link_info =
   | LinkedInteractive of string
   | NotLinked
 
-type key = int Ephemeron.key option ref 
+type key = int Ephemeron.key option ref
 
 type constant_key = constant_body * (link_info ref * key)
 
@@ -33,7 +33,8 @@ type globals = {
 
 type stratification = {
   env_universes : universes;
-  env_engagement : engagement option
+  env_engagement : engagement option;
+  env_type_in_type : bool
 }
 
 type lazy_val
@@ -54,7 +55,8 @@ type env = {
     env_stratification : stratification;
     env_conv_oracle   : Conv_oracle.oracle;
     retroknowledge : Retroknowledge.retroknowledge;
-    env_termination_checking : bool }
+    indirect_pterms : Opaqueproof.opaquetab;
+}
 
 type named_context_val = named_context * named_vals
 

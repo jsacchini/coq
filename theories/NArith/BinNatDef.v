@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -325,8 +325,8 @@ Definition lxor n m :=
 
 (** Shifts *)
 
-Definition shiftl_nat (a:N)(n:nat) := Nat.iter n double a.
-Definition shiftr_nat (a:N)(n:nat) := Nat.iter n div2 a.
+Definition shiftl_nat (a:N) := nat_rect _ a (fun _ => double).
+Definition shiftr_nat (a:N) := nat_rect _ a (fun _ => div2).
 
 Definition shiftl a n :=
   match a with

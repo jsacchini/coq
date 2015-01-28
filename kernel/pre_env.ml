@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -25,7 +25,7 @@ open Declarations
 (* The key attached to each constant is used by the VM to retrieve previous *)
 (* evaluations of the constant. It is essentially an index in the symbols table *)
 (* used by the VM. *)
-type key = int Ephemeron.key option ref 
+type key = int Ephemeron.key option ref
 
 (** Linking information for the native compiler. *)
 
@@ -46,7 +46,8 @@ type globals = {
 
 type stratification = {
   env_universes : universes;
-  env_engagement : engagement option
+  env_engagement : engagement option;
+  env_type_in_type : bool
 }
 
 type val_kind =
@@ -74,7 +75,7 @@ type env = {
   env_stratification : stratification;
   env_conv_oracle   : Conv_oracle.oracle;
   retroknowledge : Retroknowledge.retroknowledge;
-  env_termination_checking : bool
+  indirect_pterms : Opaqueproof.opaquetab;
 }
 
 type named_context_val = named_context * named_vals
@@ -94,11 +95,11 @@ let empty_env = {
   env_nb_rel = 0;
   env_stratification = {
     env_universes = initial_universes;
-    env_engagement = None };
+    env_engagement = None;
+    env_type_in_type = false};
   env_conv_oracle = Conv_oracle.empty;
   retroknowledge = Retroknowledge.initial_retroknowledge;
-  env_termination_checking = true
- }
+  indirect_pterms = Opaqueproof.empty_opaquetab }
 
 
 (* Rel context *)
@@ -144,7 +145,7 @@ let push_named d env =
     env_stratification = env.env_stratification;
     env_conv_oracle = env.env_conv_oracle;
     retroknowledge = env.retroknowledge;
-    env_termination_checking = env.env_termination_checking;
+    indirect_pterms = env.indirect_pterms;
   }
 
 let lookup_named_val id env =

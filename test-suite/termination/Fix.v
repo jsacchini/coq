@@ -1,3 +1,5 @@
 (* Trivial non-terminating function *)
 
-Fixpoint non_terminating (_ n : nat) { struct n } : False := non_terminating 0 n.
+Inductive I : Type := I_intro : I -> I.
+
+Fixpoint non_terminating (x : I) { struct x } : I := non_terminating x.

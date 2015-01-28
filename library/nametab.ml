@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -470,6 +470,8 @@ let exists_module = exists_dir
 
 let exists_modtype sp = MPTab.exists sp !the_modtypetab
 
+let exists_tactic kn = KnTab.exists kn !the_tactictab
+
 (* Reverse locate functions ***********************************************)
 
 let path_of_global ref =
@@ -521,9 +523,6 @@ let shortest_qualid_of_tactic kn =
     KnTab.shortest_qualid Id.Set.empty sp !the_tactictab
 
 let pr_global_env env ref =
-  (* Il est important de laisser le let-in, car les streams s'évaluent
-  paresseusement : il faut forcer l'évaluation pour capturer
-  l'éventuelle levée d'une exception (le cas échoit dans le debugger) *)
   try str (string_of_qualid (shortest_qualid_of_global env ref))
   with Not_found as e -> prerr_endline "pr_global_env not found"; raise e
 

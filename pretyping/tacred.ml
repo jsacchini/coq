@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -28,7 +28,7 @@ open Pretype_errors
 (* Errors *)
 
 type reduction_tactic_error =
-    InvalidAbstraction of env * constr * (env * Type_errors.type_error)
+    InvalidAbstraction of env * Evd.evar_map * constr * (env * Type_errors.type_error)
 
 exception ReductionTacticError of reduction_tactic_error
 
@@ -104,7 +104,7 @@ let destEvalRefU c = match kind_of_term c with
   | Evar ev -> (EvalEvar ev, Univ.Instance.empty)
   | _ -> anomaly (Pp.str "Not an unfoldable reference")
 
-let unsafe_reference_opt_value sigma env eval = 
+let unsafe_reference_opt_value env sigma eval = 
   match eval with
   | EvalConst cst ->
     (match (lookup_constant cst env).Declarations.const_body with 
@@ -118,7 +118,7 @@ let unsafe_reference_opt_value sigma env eval =
       Option.map (lift n) v
   | EvalEvar ev -> Evd.existential_opt_value sigma ev
 
-let reference_opt_value sigma env eval u = 
+let reference_opt_value env sigma eval u = 
   match eval with
   | EvalConst cst -> constant_opt_value_in env (cst,u)
   | EvalVar id ->
@@ -130,8 +130,8 @@ let reference_opt_value sigma env eval u =
   | EvalEvar ev -> Evd.existential_opt_value sigma ev
 
 exception NotEvaluable
-let reference_value sigma env c u =
-  match reference_opt_value sigma env c u with
+let reference_value env sigma c u =
+  match reference_opt_value env sigma c u with
     | None -> raise NotEvaluable
     | Some d -> d
 
@@ -235,7 +235,7 @@ let invert_name labs l na0 env sigma ref = function
 	match refi with
 	  | None -> None
 	  | Some ref ->
-	      try match unsafe_reference_opt_value sigma env ref with
+	      try match unsafe_reference_opt_value env sigma ref with
 		| None -> None
 		| Some c ->
 		    let labs',ccl = decompose_lam c in
@@ -253,24 +253,25 @@ let invert_name labs l na0 env sigma ref = function
    [compute_consteval_mutual_fix] only one by one, until finding the
    last one before the Fix if the latter is mutually defined *)
 
-let compute_consteval_direct sigma env ref =
-  let rec srec env n labs c =
+let compute_consteval_direct env sigma ref =
+  let rec srec env n labs onlyproj c =
     let c',l = whd_betadelta_stack env sigma c in
     match kind_of_term c' with
-      | Lambda (id,t,g) when List.is_empty l ->
-	  srec (push_rel (id,None,t) env) (n+1) (t::labs) g
-      | Fix fix ->
+      | Lambda (id,t,g) when List.is_empty l && not onlyproj ->
+	  srec (push_rel (id,None,t) env) (n+1) (t::labs) onlyproj g
+      | Fix fix when not onlyproj ->
 	  (try check_fix_reversibility labs l fix
 	  with Elimconst -> NotAnElimination)
-      | Case (_,_,d,_) when isRel d -> EliminationCases n
+      | Case (_,_,d,_) when isRel d && not onlyproj -> EliminationCases n
+      | Case (_,_,d,_) -> srec env n labs true d
       | Proj (p, d) when isRel d -> EliminationProj n
       | _ -> NotAnElimination
   in
-  match unsafe_reference_opt_value sigma env ref with
+  match unsafe_reference_opt_value env sigma ref with
     | None -> NotAnElimination
-    | Some c -> srec env 0 [] c
+    | Some c -> srec env 0 [] false c
 
-let compute_consteval_mutual_fix sigma env ref =
+let compute_consteval_mutual_fix env sigma ref =
   let rec srec env minarg labs ref c =
     let c',l = whd_betalet_stack sigma c in
     let nargs = List.length l in
@@ -279,7 +280,7 @@ let compute_consteval_mutual_fix sigma env ref =
 	  srec (push_rel (na,None,t) env) (minarg+1) (t::labs) ref g
       | Fix ((lv,i),(names,_,_)) ->
 	  (* Last known constant wrapping Fix is ref = [labs](Fix l) *)
-	  (match compute_consteval_direct sigma env ref with
+	  (match compute_consteval_direct env sigma ref with
 	     | NotAnElimination -> (*Above const was eliminable but this not!*)
 		 NotAnElimination
 	     | EliminationFix (minarg',minfxargs,infos) ->
@@ -292,31 +293,31 @@ let compute_consteval_mutual_fix sigma env ref =
       | _ when isEvalRef env c' ->
 	  (* Forget all \'s and args and do as if we had started with c' *)
 	  let ref,_ = destEvalRefU c' in
-	  (match unsafe_reference_opt_value sigma env ref with
+	  (match unsafe_reference_opt_value env sigma ref with
 	    | None -> anomaly (Pp.str "Should have been trapped by compute_direct")
 	    | Some c -> srec env (minarg-nargs) [] ref c)
       | _ -> (* Should not occur *) NotAnElimination
   in
-  match unsafe_reference_opt_value sigma env ref with
+  match unsafe_reference_opt_value env sigma ref with
     | None -> (* Should not occur *) NotAnElimination
     | Some c -> srec env 0 [] ref c
 
-let compute_consteval sigma env ref =
-  match compute_consteval_direct sigma env ref with
+let compute_consteval env sigma ref =
+  match compute_consteval_direct env sigma ref with
     | EliminationFix (_,_,(nbfix,_,_)) when not (Int.equal nbfix 1) ->
-	compute_consteval_mutual_fix sigma env ref
+	compute_consteval_mutual_fix env sigma ref
     | elim -> elim
 
-let reference_eval sigma env = function
+let reference_eval env sigma = function
   | EvalConst cst as ref ->
       (try
 	 Cmap.find cst !eval_table
        with Not_found -> begin
-	 let v = compute_consteval sigma env ref in
+	 let v = compute_consteval env sigma ref in
 	 eval_table := Cmap.add cst v !eval_table;
 	 v
        end)
-  | ref -> compute_consteval sigma env ref
+  | ref -> compute_consteval env sigma ref
 
 (* If f is bound to EliminationFix (n',infos), then n' is the minimal
    number of args for starting the reduction and infos is
@@ -384,7 +385,7 @@ let substl_with_function subst sigma constr =
     if i <= k + Array.length v then
       match v.(i-k-1) with
       | (fx, Some (min, ref)) ->
-        let (sigma, evk) = Evarutil.new_pure_evar !evd venv dummy in
+        let (sigma, evk) = Evarutil.new_pure_evar venv !evd dummy in
         evd := sigma;
         minargs := Evar.Map.add evk min !minargs;
         lift k (mkEvar (evk, [|fx;ref|]))
@@ -414,7 +415,7 @@ let solve_arity_problem env sigma fxminargs c =
           List.iter (check strict) rcargs
       | (Var _|Const _) when isEvalRef env h ->
           (let ev, u = destEvalRefU h in
-	     match reference_opt_value sigma env ev u with
+	     match reference_opt_value env sigma ev u with
              | Some h' ->
                 let bak = !evm in
                 (try List.iter (check false) rcargs
@@ -528,7 +529,7 @@ let match_eval_ref env constr =
   | Evar ev -> Some (EvalEvar ev, Univ.Instance.empty)
   | _ -> None
 
-let match_eval_ref_value sigma env constr = 
+let match_eval_ref_value env sigma constr = 
   match kind_of_term constr with
   | Const (sp, u) when is_evaluable env (EvalConstRef sp) ->
     Some (constant_value_in env (sp, u))
@@ -539,12 +540,12 @@ let match_eval_ref_value sigma env constr =
   | Evar ev -> Evd.existential_opt_value sigma ev
   | _ -> None
 
-let special_red_case env sigma whfun (ci, p, c, lf)  =
+let special_red_case env sigma whfun (ci, p, c, lf) =
   let rec redrec s =
     let (constr, cargs) = whfun s in
     match match_eval_ref env constr with
     | Some (ref, u) ->
-      (match reference_opt_value sigma env ref u with
+      (match reference_opt_value env sigma ref u with
       | None -> raise Redelimination
       | Some gvalue ->
         if reducible_mind_case gvalue then
@@ -575,21 +576,24 @@ let reduce_projection env sigma pb (recarg'hd,stack') stack =
     in Reduced (List.nth stack' proj_narg, stack)
   | _ -> NotReducible)
 
-let reduce_proj env sigma whfun c =
-  (* Pp.msgnl (str" reduce_proj: " ++ print_constr c); *)
+let reduce_proj env sigma whfun whfun' c =
   let rec redrec s =
     match kind_of_term s with
     | Proj (proj, c) -> 
       let c' = try redrec c with Redelimination -> c in
       let constr, cargs = whfun c' in
-	(* Pp.msgnl (str" reduce_proj: constructor: " ++ print_constr constr); *)
 	(match kind_of_term constr with
 	| Construct _ -> 
 	  let proj_narg = 
-	    let pb = Option.get ((lookup_constant proj env).Declarations.const_proj) in
+	    let pb = lookup_projection proj env in
 	      pb.Declarations.proj_npars + pb.Declarations.proj_arg
 	  in List.nth cargs proj_narg
 	| _ -> raise Redelimination)
+    | Case (n,p,c,brs) -> 
+      let c' = redrec c in
+      let p = (n,p,c',brs) in
+	(try special_red_case env sigma whfun' p
+	 with Redelimination -> mkCase p)
     | _ -> raise Redelimination
   in redrec c
 
@@ -651,19 +655,20 @@ let rec red_elim_const env sigma ref u largs =
           n >= 0 && not is_empty && nargs >= n,
 	  List.mem `ReductionDontExposeCase f
   in
-  try match reference_eval sigma env ref with
+  try match reference_eval env sigma ref with
     | EliminationCases n when nargs >= n ->
-	let c = reference_value sigma env ref u in
+	let c = reference_value env sigma ref u in
 	let c', lrest = whd_nothing_for_iota env sigma (applist(c,largs)) in
 	let whfun = whd_simpl_stack env sigma in
         (special_red_case env sigma whfun (destCase c'), lrest), nocase
     | EliminationProj n when nargs >= n ->
-	let c = reference_value sigma env ref u in
+	let c = reference_value env sigma ref u in
 	let c', lrest = whd_nothing_for_iota env sigma (applist(c,largs)) in
 	let whfun = whd_construct_stack env sigma in
-	  (reduce_proj env sigma whfun c', lrest), nocase
+	let whfun' = whd_simpl_stack env sigma in
+	  (reduce_proj env sigma whfun whfun' c', lrest), nocase
     | EliminationFix (min,minfxargs,infos) when nargs >= min ->
-	let c = reference_value sigma env ref u in
+	let c = reference_value env sigma ref u in
 	let d, lrest = whd_nothing_for_iota env sigma (applist(c,largs)) in
 	let f = make_elim_fun ([|Some (minfxargs,ref)|],infos) u largs in
 	let whfun = whd_construct_stack env sigma in
@@ -672,7 +677,7 @@ let rec red_elim_const env sigma ref u largs =
            | Reduced (c,rest) -> (nf_beta sigma c, rest), nocase)
     | EliminationMutualFix (min,refgoal,refinfos) when nargs >= min ->
 	let rec descend (ref,u) args =
-	  let c = reference_value sigma env ref u in
+	  let c = reference_value env sigma ref u in
 	  if evaluable_reference_eq ref refgoal then
 	    (c,args)
 	  else
@@ -686,11 +691,11 @@ let rec red_elim_const env sigma ref u largs =
 	   | NotReducible -> raise Redelimination
 	   | Reduced (c,rest) -> (nf_beta sigma c, rest), nocase)
     | NotAnElimination when unfold_nonelim ->
-         let c = reference_value sigma env ref u in
+         let c = reference_value env sigma ref u in
            (whd_betaiotazeta sigma (applist (c, largs)), []), nocase
     | _ -> raise Redelimination
     with Redelimination when unfold_anyway ->
-       let c = reference_value sigma env ref u in
+       let c = reference_value env sigma ref u in
 	 (whd_betaiotazeta sigma (applist (c, largs)), []), nocase
 
 and reduce_params env sigma stack l =
@@ -733,22 +738,26 @@ and whd_simpl_stack env sigma =
 
       | Proj (p, c) ->
         (try 
-	   if is_evaluable env (EvalConstRef p) then
-	     let pb = Option.get ((lookup_constant p env).Declarations.const_proj) in
- 	       (match ReductionBehaviour.get (ConstRef p) with
- 	       | Some (l, n, f) when List.mem `ReductionNeverUnfold f -> (* simpl never *) s'
-	       | Some (l, n, f) when not (List.is_empty l) ->
-		 let l' = List.map (fun i -> i - (pb.Declarations.proj_npars + 1)) l in
-		 let stack = reduce_params env sigma stack l' in
-		   (match reduce_projection env sigma pb 
-		     (whd_construct_stack env sigma c) stack 
-		    with
-		    | Reduced s' -> redrec (applist s')
-		    | NotReducible -> s')
- 	       | _ ->
-		 match reduce_projection env sigma pb (whd_construct_stack env sigma c) stack with
-		 | Reduced s' -> redrec (applist s')
-		 | NotReducible -> s')
+	   let unf = Projection.unfolded p in
+	     if unf || is_evaluable env (EvalConstRef (Projection.constant p)) then
+	       let pb = lookup_projection p env in
+ 		 (match unf, ReductionBehaviour.get (ConstRef (Projection.constant p)) with
+ 		 | false, Some (l, n, f) when List.mem `ReductionNeverUnfold f -> 
+                   (* simpl never *) s'
+		 | false, Some (l, n, f) when not (List.is_empty l) ->
+		   let l' = List.map_filter (fun i -> 
+		     let idx = (i - (pb.Declarations.proj_npars + 1)) in
+		       if idx < 0 then None else Some idx) l in
+		   let stack = reduce_params env sigma stack l' in
+		     (match reduce_projection env sigma pb 
+		       (whd_construct_stack env sigma c) stack 
+		      with
+		      | Reduced s' -> redrec (applist s')
+		      | NotReducible -> s')
+ 		 | _ ->
+		   match reduce_projection env sigma pb (whd_construct_stack env sigma c) stack with
+		   | Reduced s' -> redrec (applist s')
+		   | NotReducible -> s')
 	   else s'
 	 with Redelimination -> s')
 	  
@@ -777,7 +786,7 @@ and whd_construct_stack env sigma s =
   if reducible_mind_case constr then s'
   else match match_eval_ref env constr with
   | Some (ref, u) ->
-    (match reference_opt_value sigma env ref u with
+    (match reference_opt_value env sigma ref u with
     | None -> raise Redelimination
     | Some gvalue -> whd_construct_stack env sigma (applist(gvalue, cargs)))
   | _ -> raise Redelimination
@@ -789,9 +798,6 @@ and whd_construct_stack env sigma s =
    beta-iota-fix-cofix-zeta-cast at the head of the conclusion of a
    sequence of products; fails if no delta redex is around
 *)
-
-let match_eval_proj env proj =
-  ((lookup_constant proj env).Declarations.const_proj)
 
 let try_red_product env sigma c =
   let simpfun = clos_norm_flags betaiotazeta env sigma in
@@ -819,18 +825,16 @@ let try_red_product env sigma c =
 	  | Construct _ -> c
 	  | _ -> redrec env c
 	in
-	  (match match_eval_proj env p with
-	  | Some pb -> 
-            (match reduce_projection env sigma pb (whd_betaiotazeta_stack sigma c') [] with
-	    | Reduced s -> simpfun (applist s)
-	    | NotReducible -> raise Redelimination)
-	  | None -> raise Redelimination)
+	let pb = lookup_projection p env in
+          (match reduce_projection env sigma pb (whd_betaiotazeta_stack sigma c') [] with
+	  | Reduced s -> simpfun (applist s)
+	  | NotReducible -> raise Redelimination)
       | _ -> 
         (match match_eval_ref env x with
         | Some (ref, u) ->
           (* TO DO: re-fold fixpoints after expansion *)
           (* to get true one-step reductions *)
-	  (match reference_opt_value sigma env ref u with
+	  (match reference_opt_value env sigma ref u with
 	     | None -> raise Redelimination
 	     | Some c -> c)
 	| _ -> raise Redelimination)
@@ -884,7 +888,7 @@ let whd_simpl_orelse_delta_but_fix_old env sigma c =
           (try
 	    redrec (red_elim_const env sigma ref stack)
            with Redelimination ->
-             match reference_opt_value sigma env ref with
+             match reference_opt_value env sigma ref with
 	       | Some c ->
 		   (match kind_of_term (strip_lam c) with
                      | CoFix _ | Fix _ -> s
@@ -894,6 +898,12 @@ let whd_simpl_orelse_delta_but_fix_old env sigma c =
   in app_stack (redrec (c, empty_stack))
 *)
 
+let whd_simpl_stack = 
+  if Flags.profile then 
+    let key = Profile.declare_profile "whd_simpl_stack" in
+      Profile.profile3 key whd_simpl_stack
+  else whd_simpl_stack
+
 (* Same as [whd_simpl] but also reduces constants that do not hide a
    reducible fix, but does this reduction of constants only until it
    immediately hides a non reducible fix or a cofix *)
@@ -901,10 +911,19 @@ let whd_simpl_orelse_delta_but_fix_old env sigma c =
 let whd_simpl_orelse_delta_but_fix env sigma c =
   let rec redrec s =
     let (constr, stack as s') = whd_simpl_stack env sigma s in
-    match match_eval_ref_value sigma env constr with
+    match match_eval_ref_value env sigma constr with
     | Some c ->
       (match kind_of_term (strip_lam c) with
       | CoFix _ | Fix _ -> s'
+      | Proj (p,t) when
+	  (match kind_of_term constr with
+	  | Const (c', _) -> eq_constant (Projection.constant p) c'
+	  | _ -> false) ->
+	let pb = Environ.lookup_projection p env in
+	  if List.length stack <= pb.Declarations.proj_npars then
+	    (** Do not show the eta-expanded form *)
+	    s'
+	  else redrec (applist (c, stack))
       | _ -> redrec (applist(c, stack)))
     | None -> s'
   in
@@ -922,46 +941,75 @@ let simpl env sigma c = strong whd_simpl env sigma c
 
 (* Reduction at specific subterms *)
 
-let matches_head c t =
+let matches_head env sigma c t =
   match kind_of_term t with
-    | App (f,_) -> ConstrMatching.matches c f
-    | Proj (p, _) -> ConstrMatching.matches c (mkConst p)
-    | _ -> raise ConstrMatching.PatternMatchingFailure
+    | App (f,_) -> Constr_matching.matches env sigma c f
+    | Proj (p, _) -> Constr_matching.matches env sigma c (mkConst (Projection.constant p))
+    | _ -> raise Constr_matching.PatternMatchingFailure
+
+let is_pattern_meta = function Pattern.PMeta _ -> true | _ -> false
+
+(** FIXME: Specific function to handle projections: it ignores what happens on the
+    parameters. This is a temporary fix while rewrite etc... are not up to equivalence
+    of the projection and its eta expanded form.
+*)
+let change_map_constr_with_binders_left_to_right g f (env, l as acc) sigma c = 
+  match kind_of_term c with
+  | Proj (p, r) -> (* Treat specially for partial applications *)
+    let t = Retyping.expand_projection env sigma p r [] in
+    let hdf, al = destApp t in
+    let a = al.(Array.length al - 1) in
+    let app = (mkApp (hdf, Array.sub al 0 (Array.length al - 1))) in
+    let app' = f acc app in
+    let a' = f acc a in
+      (match kind_of_term app' with
+      | App (hdf', al') when hdf' == hdf ->
+        (* Still the same projection, we ignore the change in parameters *)
+	mkProj (p, a')
+      | _ -> mkApp (app', [| a' |]))
+  | _ -> map_constr_with_binders_left_to_right g f acc c
 
 let e_contextually byhead (occs,c) f env sigma t =
   let (nowhere_except_in,locs) = Locusops.convert_occs occs in
   let maxocc = List.fold_right max locs 0 in
   let pos = ref 1 in
   let evd = ref sigma in
-  let rec traverse (env,c as envc) t =
-    if nowhere_except_in && (!pos > maxocc) then t
+  let rec traverse nested (env,c as envc) t =
+    if nowhere_except_in && (!pos > maxocc) then (* Shortcut *) t
     else
     try
       let subst =
-        if byhead then matches_head c t else ConstrMatching.matches c t in
+        if byhead then matches_head env sigma c t 
+	else Constr_matching.matches env sigma c t in
       let ok =
 	if nowhere_except_in then Int.List.mem !pos locs
 	else not (Int.List.mem !pos locs) in
       incr pos;
-      if ok then
-        let subst' = Id.Map.map (traverse envc) subst in
-	let evm, t = f subst' env !evd t in
-	  (evd := evm; t)
-      else if byhead then
-	(* find other occurrences of c in t; TODO: ensure left-to-right *)
-	(match kind_of_term t with
-	| App (f,l) ->
-	  mkApp (f, Array.map_left (traverse envc) l)
-	| Proj (p,c) -> mkProj (p,traverse envc c)
-	| _ -> assert false)
+      if ok then begin
+        if Option.has_some nested then
+          errorlabstrm "" (str "The subterm at occurrence " ++ int (Option.get nested) ++ str " overlaps with the subterm at occurrence " ++ int (!pos-1) ++ str ".");
+        (* Skip inner occurrences for stable counting of occurrences *)
+        if locs != [] then
+          ignore (traverse_below (Some (!pos-1)) envc t);
+	let evm, t = f subst env !evd t in
+	(evd := evm; t)
+      end
       else
-	t
-    with ConstrMatching.PatternMatchingFailure ->
-      map_constr_with_binders_left_to_right
-	(fun d (env,c) -> (push_rel d env,lift_pattern 1 c))
-        traverse envc t
+	traverse_below nested envc t
+    with Constr_matching.PatternMatchingFailure ->
+      traverse_below nested envc t
+  and traverse_below nested envc t =
+    (* when byhead, find other occurrences without matching again partial
+       application with same head *)
+    match kind_of_term t with
+    | App (f,l) when byhead -> mkApp (f, Array.map_left (traverse nested envc) l)
+    | Proj (p,c) when byhead -> mkProj (p,traverse nested envc c)
+    | _ ->
+        change_map_constr_with_binders_left_to_right
+          (fun d (env,c) -> (push_rel d env,lift_pattern 1 c))
+          (traverse nested) envc sigma t
   in
-  let t' = traverse (env,c) t in
+  let t' = traverse None (env,c) t in
   if List.exists (fun o -> o >= !pos) locs then error_invalid_occurrence locs;
   !evd, t'
 
@@ -976,7 +1024,6 @@ let contextually byhead occs f env sigma t =
 let match_constr_evaluable_ref sigma c evref = 
   match kind_of_term c, evref with
   | Const (c,u), EvalConstRef c' when eq_constant c c' -> Some u
-  | Proj (p,c), EvalConstRef p' when eq_constant p p' -> Some Univ.Instance.empty
   | Var id, EvalVarRef id' when id_eq id id' -> Some Univ.Instance.empty
   | _, _ -> None
 
@@ -984,10 +1031,7 @@ let substlin env sigma evalref n (nowhere_except_in,locs) c =
   let maxocc = List.fold_right max locs 0 in
   let pos = ref n in
   assert (List.for_all (fun x -> x >= 0) locs);
-  let value u = 
-    value_of_evaluable_ref env evalref u 
-          (* Some (whd_betaiotazeta sigma c) *)
-  in
+  let value u = value_of_evaluable_ref env evalref u in
   let rec substrec () c =
     if nowhere_except_in && !pos > maxocc then c
     else 
@@ -1017,6 +1061,10 @@ let unfold env sigma name =
     clos_norm_flags (unfold_red name) env sigma
   else
     error (string_of_evaluable_ref env name^" is opaque.")
+
+let is_projection env = function
+  | EvalVarRef _ -> false
+  | EvalConstRef c -> Environ.is_projection c env
 
 (* [unfoldoccs : (readable_constraints -> (int list * full_path) -> constr -> constr)]
  * Unfolds the constant name in a term c following a list of occurrences occl.
@@ -1080,30 +1128,39 @@ let compute = cbv_betadeltaiota
 (* gives [na:ta]c' such that c converts to ([na:ta]c' a), abstracting only
  * the specified occurrences. *)
 
-let abstract_scheme env sigma (locc,a) c =
+let abstract_scheme env (locc,a) (c, sigma) =
   let ta = Retyping.get_type_of env sigma a in
   let na = named_hd env ta Anonymous in
   if occur_meta ta then error "Cannot find a type for the generalisation.";
   if occur_meta a then
-    mkLambda (na,ta,c)
+    mkLambda (na,ta,c), sigma
   else
-    let c', sigma' = subst_closed_term_occ sigma locc a c in
-      mkLambda (na,ta,c') 
+    let c', sigma' = subst_closed_term_occ env sigma (AtOccs locc) a c in
+      mkLambda (na,ta,c'), sigma'
 
 let pattern_occs loccs_trm env sigma c =
-  let abstr_trm = List.fold_right (abstract_scheme env sigma) loccs_trm c in
+  let abstr_trm, sigma = List.fold_right (abstract_scheme env) loccs_trm (c,sigma) in
   try
     let _ = Typing.type_of env sigma abstr_trm in
-    applist(abstr_trm, List.map snd loccs_trm)
+      sigma, applist(abstr_trm, List.map snd loccs_trm)
   with Type_errors.TypeError (env',t) ->
-    raise (ReductionTacticError (InvalidAbstraction (env,abstr_trm,(env',t))))
+    raise (ReductionTacticError (InvalidAbstraction (env,sigma,abstr_trm,(env',t))))
 
 (* Used in several tactics. *)
 
 let check_privacy env ind =
-  if (fst (Inductive.lookup_mind_specif env (fst ind))).Declarations.mind_private = Some true then
-    errorlabstrm "" (str "case analysis on a private type")
+  let spec = Inductive.lookup_mind_specif env (fst ind) in
+  if Inductive.is_private spec then
+    errorlabstrm "" (str "case analysis on a private type.")
   else ind
+
+let check_not_primitive_record env ind =
+  let spec = Inductive.lookup_mind_specif env (fst ind) in
+    if Inductive.is_primitive_record spec then
+      errorlabstrm "" (str "case analysis on a primitive record type: " ++
+		       str "use projections or let instead.")
+    else ind
+
 (* put t as t'=(x1:A1)..(xn:An)B with B an inductive definition of name name
    return name, B and t' *)
 
@@ -1163,7 +1220,7 @@ let one_step_reduce env sigma c =
           (try
              fst (red_elim_const env sigma ref u stack)
            with Redelimination ->
-	     match reference_opt_value sigma env ref u with
+	     match reference_opt_value env sigma ref u with
 	       | Some d -> (d, stack)
 	       | None -> raise NotStepReducible)
 
@@ -1171,16 +1228,17 @@ let one_step_reduce env sigma c =
   in
   applist (redrec (c,[]))
 
-let isIndRef = function IndRef _ -> true | _ -> false
+let error_cannot_recognize ref =
+  errorlabstrm ""
+    (str "Cannot recognize a statement based on " ++
+     Nametab.pr_global_env Id.Set.empty ref ++ str".")
 
 let reduce_to_ref_gen allow_product env sigma ref t =
   if isIndRef ref then
     let ((mind,u),t) = reduce_to_ind_gen allow_product env sigma t in
     begin match ref with
     | IndRef mind' when eq_ind mind mind' -> t
-    | _ ->
-      errorlabstrm "" (str "Cannot recognize a statement based on " ++
-        Nametab.pr_global_env Id.Set.empty ref ++ str".")
+    | _ -> error_cannot_recognize ref
     end
   else
   (* lazily reduces to match the head of [t] with the expected [ref] *)
@@ -1188,12 +1246,10 @@ let reduce_to_ref_gen allow_product env sigma ref t =
     let c, _ = decompose_appvect (Reductionops.whd_nored sigma t) in
     match kind_of_term c with
       | Prod (n,ty,t') ->
-	  if allow_product then
+          if allow_product then
 	    elimrec (push_rel (n,None,t) env) t' ((n,None,ty)::l)
-	  else
-	     errorlabstrm ""
-	       (str "Cannot recognize an atomic statement based on " ++
-	        Nametab.pr_global_env Id.Set.empty ref ++ str".")
+          else
+            error_cannot_recognize ref
       | _ ->
 	  try
 	    if eq_gr (global_of_constr c) ref
@@ -1203,10 +1259,7 @@ let reduce_to_ref_gen allow_product env sigma ref t =
           try
 	    let t' = nf_betaiota sigma (one_step_reduce env sigma t) in
             elimrec env t' l
-          with NotStepReducible ->
-	    errorlabstrm ""
-	      (str "Cannot recognize a statement based on " ++
-	       Nametab.pr_global_env Id.Set.empty ref ++ str".")
+          with NotStepReducible -> error_cannot_recognize ref
   in
   elimrec env t []
 

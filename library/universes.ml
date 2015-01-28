@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -22,6 +22,9 @@ let global_universes = Summary.ref ~name:"Global universe names"
 let global_universe_names () = !global_universes
 let set_global_universe_names s = global_universes := s
 
+let pr_with_global_universes l = 
+  try Nameops.pr_id (LMap.find l (snd !global_universes))
+  with Not_found -> Level.pr l
 
 type universe_constraint_type = ULe | UEq | ULub
 
@@ -215,6 +218,39 @@ let leq_constr_universes m n =
     let res = compare_leq m n in
       res, !cstrs
 
+let compare_head_gen_proj env equ eqs eqc' m n =
+  match kind_of_term m, kind_of_term n with
+  | Proj (p, c), App (f, args)
+  | App (f, args), Proj (p, c) -> 
+    (match kind_of_term f with
+    | Const (p', u) when eq_constant (Projection.constant p) p' -> 
+      let pb = Environ.lookup_projection p env in
+      let npars = pb.Declarations.proj_npars in
+	if Array.length args == npars + 1 then
+	  eqc' c args.(npars)
+	else false
+    | _ -> false)
+  | _ -> Constr.compare_head_gen equ eqs eqc' m n
+    
+let eq_constr_universes_proj env m n =
+  if m == n then true, Constraints.empty
+  else 
+    let cstrs = ref Constraints.empty in
+    let eq_universes strict l l' = 
+      cstrs := enforce_eq_instances_univs strict l l' !cstrs; true in
+    let eq_sorts s1 s2 = 
+      if Sorts.equal s1 s2 then true
+      else
+	(cstrs := Constraints.add 
+	   (Sorts.univ_of_sort s1, UEq, Sorts.univ_of_sort s2) !cstrs;
+	 true)
+    in
+    let rec eq_constr' m n = 
+      m == n ||	compare_head_gen_proj env eq_universes eq_sorts eq_constr' m n
+    in
+    let res = eq_constr' m n in
+      res, !cstrs
+
 (* Generator of levels *)
 let new_univ_level, set_remote_new_univ_level =
   RemoteCounter.new_counter ~name:"Universes" 0 ~incr:((+) 1)
@@ -236,23 +272,19 @@ let fresh_universe_instance ctx =
 
 let fresh_instance_from_context ctx =
   let inst = fresh_universe_instance ctx in
-  let subst = make_universe_subst inst ctx in
-  let constraints = instantiate_univ_context subst ctx in
-    (inst, subst), constraints
+  let constraints = instantiate_univ_constraints inst ctx in
+    inst, constraints
 
 let fresh_instance ctx =
   let ctx' = ref LSet.empty in
-  let s = ref LMap.empty in
   let inst = 
     Instance.subst_fn (fun v -> 
       let u = new_univ_level (Global.current_dirpath ()) in
-	ctx' := LSet.add u !ctx';
-	s := LMap.add v u !s; u) 
+	ctx' := LSet.add u !ctx'; u) 
       (UContext.instance ctx)
-  in !ctx', !s, inst
+  in !ctx', inst
 
 let existing_instance ctx inst = 
-  let s = ref LMap.empty in
   let () = 
     let a1 = Instance.to_array inst 
     and a2 = Instance.to_array (UContext.instance ctx) in
@@ -261,18 +293,18 @@ let existing_instance ctx inst =
 	Errors.errorlabstrm "Universes"
 	  (str "Polymorphic constant expected " ++ int len2 ++ 
 	     str" levels but was given " ++ int len1)
-      else Array.iter2 (fun u v -> s := LMap.add v u !s) a1 a2
-  in LSet.empty, !s, inst
+      else ()
+  in LSet.empty, inst
 
 let fresh_instance_from ctx inst =
-  let ctx', subst, inst = 
+  let ctx', inst = 
     match inst with 
     | Some inst -> existing_instance ctx inst
     | None -> fresh_instance ctx 
   in
-  let constraints = instantiate_univ_context subst ctx in
-    (inst, subst), (ctx', constraints)
-      
+  let constraints = instantiate_univ_constraints inst ctx in
+    inst, (ctx', constraints)
+
 let unsafe_instance_from ctx =
   (Univ.UContext.instance ctx, ctx)
     
@@ -281,28 +313,32 @@ let unsafe_instance_from ctx =
 let fresh_constant_instance env c inst =
   let cb = lookup_constant c env in
     if cb.Declarations.const_polymorphic then
-      let (inst,_), ctx = fresh_instance_from (Declareops.universes_of_constant cb) inst in
+      let inst, ctx =
+        fresh_instance_from
+          (Declareops.universes_of_constant (Environ.opaque_tables env) cb) inst
+      in
 	((c, inst), ctx)
     else ((c,Instance.empty), ContextSet.empty)
 
 let fresh_inductive_instance env ind inst = 
   let mib, mip = Inductive.lookup_mind_specif env ind in
     if mib.Declarations.mind_polymorphic then
-      let (inst,_), ctx = fresh_instance_from mib.Declarations.mind_universes inst in
+      let inst, ctx = fresh_instance_from mib.Declarations.mind_universes inst in
 	((ind,inst), ctx)
     else ((ind,Instance.empty), ContextSet.empty)
 
 let fresh_constructor_instance env (ind,i) inst = 
   let mib, mip = Inductive.lookup_mind_specif env ind in
     if mib.Declarations.mind_polymorphic then
-      let (inst,_), ctx = fresh_instance_from mib.Declarations.mind_universes inst in
+      let inst, ctx = fresh_instance_from mib.Declarations.mind_universes inst in
 	(((ind,i),inst), ctx)
     else (((ind,i),Instance.empty), ContextSet.empty)
 
 let unsafe_constant_instance env c =
   let cb = lookup_constant c env in
     if cb.Declarations.const_polymorphic then
-      let inst, ctx = unsafe_instance_from (Declareops.universes_of_constant cb) in
+      let inst, ctx = unsafe_instance_from
+        (Declareops.universes_of_constant (Environ.opaque_tables env) cb) in
 	((c, inst), ctx)
     else ((c,Instance.empty), UContext.empty)
 
@@ -400,7 +436,7 @@ let global_app_of_constr c =
   | Ind (i, u) -> (IndRef i, u), None
   | Construct (c, u) -> (ConstructRef c, u), None
   | Var id -> (VarRef id, Instance.empty), None
-  | Proj (p, c) -> (ConstRef p, Instance.empty), Some c
+  | Proj (p, c) -> (ConstRef (Projection.constant p), Instance.empty), Some c
   | _ -> raise Not_found
 
 open Declarations
@@ -412,15 +448,14 @@ let type_of_reference env r =
      let cb = Environ.lookup_constant c env in
      let ty = Typeops.type_of_constant_type env cb.const_type in
        if cb.const_polymorphic then
-	 let (inst, subst), ctx = 
-	   fresh_instance_from (Declareops.universes_of_constant cb) None in
-	   Vars.subst_univs_level_constr subst ty, ctx
+	 let inst, ctx = fresh_instance_from (Declareops.universes_of_constant (Environ.opaque_tables env) cb) None in
+	   Vars.subst_instance_constr inst ty, ctx
        else ty, ContextSet.empty
 
   | IndRef ind ->
      let (mib, oib as specif) = Inductive.lookup_mind_specif env ind in
        if mib.mind_polymorphic then
-	 let (inst, subst), ctx = fresh_instance_from mib.mind_universes None in
+	 let inst, ctx = fresh_instance_from mib.mind_universes None in
 	 let ty = Inductive.type_of_inductive env (specif, inst) in
 	   ty, ctx
        else
@@ -429,7 +464,7 @@ let type_of_reference env r =
   | ConstructRef cstr ->
      let (mib,oib as specif) = Inductive.lookup_mind_specif env (inductive_of_constructor cstr) in
        if mib.mind_polymorphic then
-	 let (inst, subst), ctx = fresh_instance_from mib.mind_universes None in
+	 let inst, ctx = fresh_instance_from mib.mind_universes None in
 	   Inductive.type_of_constructor (cstr,inst) specif, ctx
        else Inductive.type_of_constructor (cstr,Instance.empty) specif, ContextSet.empty
 
@@ -510,12 +545,14 @@ let subst_univs_fn_puniverses lsubst (c, u as cu) =
   let u' = Instance.subst_fn lsubst u in
     if u' == u then cu else (c, u')
 
-let nf_evars_and_universes_gen f subst =
+let nf_evars_and_universes_opt_subst f subst =
+  let subst = fun l -> match LMap.find l subst with None -> raise Not_found | Some l' -> l' in
   let lsubst = Univ.level_subst_of subst in
   let rec aux c =
     match kind_of_term c with
-    | Evar (evdk, _ as ev) ->
-      (match try f ev with Not_found -> None with
+    | Evar (evk, args) ->
+      let args = Array.map aux args in
+      (match try f (evk, args) with Not_found -> None with
       | None -> c
       | Some c -> aux c)
     | Const pu -> 
@@ -532,10 +569,6 @@ let nf_evars_and_universes_gen f subst =
 	if u' == u then c else mkSort (sort_of_univ u')
     | _ -> map_constr aux c
   in aux
-
-let nf_evars_and_universes_opt_subst f subst =
-  let subst = fun l -> match LMap.find l subst with None -> raise Not_found | Some l' -> l' in
-    nf_evars_and_universes_gen f subst
 
 let fresh_universe_context_set_instance ctx =
   if ContextSet.is_empty ctx then LMap.empty, ctx
@@ -793,9 +826,7 @@ let normalize_context_set ctx us algs =
   (* Noneqs is now in canonical form w.r.t. equality constraints, 
      and contains only inequality constraints. *)
   let noneqs = subst_univs_level_constraints subst noneqs in
-  let us = 
-    LMap.subst_union (LMap.map (fun v -> Some (Universe.make v)) subst) us
-  in
+  let us = LMap.fold (fun u v acc -> LMap.add u (Some (Universe.make v)) acc) subst us in
   (* Compute the left and right set of flexible variables, constraints
      mentionning other variables remain in noneqs. *)
   let noneqs, ucstrsl, ucstrsr = 
@@ -815,7 +846,7 @@ let normalize_context_set ctx us algs =
       in (noneqs, ucstrsl', ucstrsr'))
     noneqs (Constraint.empty, LMap.empty, LMap.empty)
   in
-  (* Now we construct the instanciation of each variable. *)
+  (* Now we construct the instantiation of each variable. *)
   let ctx', us, algs, inst, noneqs = 
     minimize_univ_variables ctx us algs ucstrsr ucstrsl noneqs
   in
@@ -840,22 +871,20 @@ let restrict_universe_context (univs,csts) s =
   (* Universes that are not necessary to typecheck the term.
      E.g. univs introduced by tactics and not used in the proof term. *)
   let diff = LSet.diff univs s in
-  let is_useless l r =
-    let lmem = LSet.mem l diff 
-    and rmem = LSet.mem r diff in
-      lmem && rmem
-      (* if lmem then *)
-      (* 	rmem || not (LSet.mem r univs) *)
-      (* else *)
-      (* 	rmem && not (LSet.mem l s) *)
-  in
-  let (univscstrs, csts) =
-    Constraint.fold
-      (fun (l,d,r as c) (univs, csts) ->
-        if is_useless l r then (univs, csts)
-	else (LSet.add l (LSet.add r univs), Constraint.add c csts))
-    csts (LSet.empty, Constraint.empty)
-  in (LSet.inter univs (LSet.union s univscstrs), csts)
+  let rec aux diff candid univs ness = 
+    let (diff', candid', univs', ness') = 
+      Constraint.fold
+	(fun (l, d, r as c) (diff, candid, univs, csts) ->
+	  if not (LSet.mem l diff) then
+	    (LSet.remove r diff, candid, univs, Constraint.add c csts)
+	  else if not (LSet.mem r diff) then
+	    (LSet.remove l diff, candid, univs, Constraint.add c csts)
+	  else (diff, Constraint.add c candid, univs, csts))
+	candid (diff, Constraint.empty, univs, ness)
+    in
+      if ness' == ness then (LSet.diff univs diff', ness)
+      else aux diff' candid' univs' ness'
+  in aux diff csts univs Constraint.empty
 
 let simplify_universe_context (univs,csts) =
   let uf = UF.create () in
@@ -931,10 +960,13 @@ let is_direct_sort_constraint s v = match s with
 let solve_constraints_system levels level_bounds level_min =
   let open Univ in
   let levels =
-    Array.map (Option.map
-		 (fun u -> match Universe.level u with 
-		 | Some u -> u 
-		 | _ -> Errors.anomaly (Pp.str"expects Atom")))
+    Array.mapi (fun i o ->
+      match o with
+      | Some u ->
+	(match Universe.level u with 
+	| Some u -> Some u 
+	| _ -> level_bounds.(i) <- Universe.sup level_bounds.(i) u; None)
+      | None -> None)
       levels in
   let v = Array.copy level_bounds in
   let nind = Array.length v in

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -51,7 +51,7 @@ let rec substitterm prof t by_t in_u =
 
 let lift_ldecl n ldecl = List.map (fun (x,y) -> x,lift n y) ldecl
 
-let understand = Pretyping.understand Evd.empty (Global.env())
+let understand = Pretyping.understand (Global.env()) Evd.empty
 
 (** Operations on names and identifiers *)
 let id_of_name = function
@@ -355,8 +355,8 @@ let ind2name = Id.of_string "__ind2"
     be co-inductive, and for the moment they must not be mutual
     either. *)
 let verify_inds mib1 mib2 =
-  if not mib1.mind_finite then error "First argument is coinductive";
-  if not mib2.mind_finite then error "Second argument is coinductive";
+  if mib1.mind_finite == Decl_kinds.CoFinite then error "First argument is coinductive";
+  if mib2.mind_finite == Decl_kinds.CoFinite then error "Second argument is coinductive";
   if not (Int.equal mib1.mind_ntypes 1) then error "First argument is mutual";
   if not (Int.equal mib2.mind_ntypes 1) then error "Second argument is mutual";
   ()
@@ -773,7 +773,7 @@ let merge_inductive_body (shift:merge_infos) avoid (oib1:one_inductive_body)
   let mkrawcor nme avoid typ =
     (* first replace rel 1 by a varname *)
     let substindtyp = substitterm 0 (mkRel 1) (mkVar nme) typ in
-    Detyping.detype false (Id.Set.elements avoid) [] substindtyp in
+    Detyping.detype false (Id.Set.elements avoid) (Global.env()) Evd.empty substindtyp in
   let lcstr1: glob_constr list =
     Array.to_list (Array.map (mkrawcor ind1name avoid) oib1.mind_user_lc) in
   (* add  to avoid all indentifiers of lcstr1 *)
@@ -821,11 +821,11 @@ let merge_rec_params_and_arity prms1 prms2 shift (concl:constr) =
         let typ = glob_constr_to_constr_expr tp in
         LocalRawAssum ([(Loc.ghost,nme)], Constrexpr_ops.default_binder_kind, typ) :: acc)
       [] params in
-  let concl = Constrextern.extern_constr false (Global.env()) concl in
+  let concl = Constrextern.extern_constr false (Global.env()) Evd.empty concl in
   let arity,_ =
     List.fold_left
       (fun (acc,env) (nm,_,c) ->
-        let typ = Constrextern.extern_constr false env c in
+        let typ = Constrextern.extern_constr false env Evd.empty c in
         let newenv = Environ.push_rel (nm,None,c) env in
         CProdN (Loc.ghost, [[(Loc.ghost,nm)],Constrexpr_ops.default_binder_kind,typ] , acc) , newenv)
       (concl,Global.env())
@@ -854,7 +854,7 @@ let glob_constr_list_to_inductive_expr prms1 prms2 mib1 mib2 shift
 let mkProd_reldecl (rdecl:rel_declaration) (t2:glob_constr) =
   match rdecl with
     | (nme,None,t) ->
-        let traw = Detyping.detype false [] [] t in
+        let traw = Detyping.detype false [] (Global.env()) Evd.empty t in
         GProd (Loc.ghost,nme,Explicit,traw,t2)
     | (_,Some _,_) -> assert false
 
@@ -885,9 +885,9 @@ let merge_inductive (ind1: inductive) (ind2: inductive)
   (* Declare inductive *)
   let indl,_,_ = Command.extract_mutual_inductive_declaration_components [(indexpr,[])] in
   let mie,impls = Command.interp_mutual_inductive indl [] 
-          false (*FIXMEnon-poly *) false (* means not private *) true (* means: not coinductive *) in
+          false (*FIXMEnon-poly *) false (* means not private *) Decl_kinds.Finite (* means: not coinductive *) in
   (* Declare the mutual inductive block with its associated schemes *)
-  ignore (Command.declare_mutual_inductive_with_eliminations Declare.UserVerbose mie impls)
+  ignore (Command.declare_mutual_inductive_with_eliminations mie impls)
 
 
 (* Find infos on identifier id. *)

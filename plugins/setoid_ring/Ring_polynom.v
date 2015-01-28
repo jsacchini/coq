@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -1033,24 +1033,26 @@ Section POWER.
   now destruct pe.
   Qed.
 
+  Arguments norm_aux !pe : simpl nomatch.
+
   Lemma norm_aux_spec l pe :
     PEeval l pe == (norm_aux pe)@l.
   Proof.
    intros.
-   induction pe.
-   - now rewrite (morph0 CRmorph).
+   induction pe; cbn.
+   - now rewrite (morph0 CRmorph). 
    - now rewrite (morph1 CRmorph).
    - reflexivity.
    - apply mkX_ok.
-   - simpl PEeval. rewrite IHpe1, IHpe2.
+   - rewrite IHpe1, IHpe2.
      assert (H1 := norm_aux_PEopp pe1).
      assert (H2 := norm_aux_PEopp pe2).
      rewrite norm_aux_PEadd.
      do 2 destruct get_PEopp; rewrite ?H1, ?H2; Esimpl; add_permut.
-   - simpl. rewrite IHpe1, IHpe2. Esimpl.
-   - simpl. rewrite IHpe1, IHpe2. now rewrite Pmul_ok.
-   - simpl. rewrite IHpe. Esimpl.
-   - simpl. rewrite Ppow_N_ok by reflexivity.
+   - rewrite IHpe1, IHpe2. Esimpl.
+   - rewrite IHpe1, IHpe2. now rewrite Pmul_ok.
+   - rewrite IHpe. Esimpl.
+   - rewrite Ppow_N_ok by reflexivity.
      rewrite pow_th.(rpow_pow_N). destruct n0; simpl; Esimpl.
      induction p;simpl; now rewrite ?IHp, ?IHpe, ?Pms_ok, ?Pmul_ok.
   Qed.

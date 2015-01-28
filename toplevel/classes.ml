@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -25,33 +25,37 @@ open Constrexpr
 open Decl_kinds
 open Entries
 
+let refine_instance = ref true
+
+let _ = Goptions.declare_bool_option {
+  Goptions.optsync  = true;
+  Goptions.optdepr  = false;
+  Goptions.optname  = "definition of instances by refining";
+  Goptions.optkey   = ["Refine";"Instance";"Mode"];
+  Goptions.optread  = (fun () -> !refine_instance);
+  Goptions.optwrite = (fun b -> refine_instance := b)
+}
+
 let typeclasses_db = "typeclass_instances"
 
 let set_typeclass_transparency c local b = 
-  Auto.add_hints local [typeclasses_db] 
-    (Auto.HintsTransparencyEntry ([c], b))
+  Hints.add_hints local [typeclasses_db] 
+    (Hints.HintsTransparencyEntry ([c], b))
     
 let _ =
   Hook.set Typeclasses.add_instance_hint_hook
     (fun inst path local pri poly ->
-     let inst' = match inst with IsConstr c -> Auto.IsConstr (c, Univ.ContextSet.empty)
-       | IsGlobal gr -> Auto.IsGlobRef gr
+     let inst' = match inst with IsConstr c -> Hints.IsConstr (c, Univ.ContextSet.empty)
+       | IsGlobal gr -> Hints.IsGlobRef gr
      in
       Flags.silently (fun () ->
-	Auto.add_hints local [typeclasses_db]
-	  (Auto.HintsResolveEntry
-	     [pri, poly, false, Auto.PathHints path, inst'])) ());
+	Hints.add_hints local [typeclasses_db]
+	  (Hints.HintsResolveEntry
+	     [pri, poly, false, Hints.PathHints path, inst'])) ());
   Hook.set Typeclasses.set_typeclass_transparency_hook set_typeclass_transparency;
   Hook.set Typeclasses.classes_transparent_state_hook
-    (fun () -> Auto.Hint_db.transparent_state (Auto.searchtable_map typeclasses_db))
-    
-let declare_class g =
-  match global g with
-  | ConstRef x -> Typeclasses.add_constant_class x
-  | IndRef x -> Typeclasses.add_inductive_class x
-  | _ -> user_err_loc (loc_of_reference g, "declare_class", 
-		      Pp.str"Unsupported class type, only constants and inductives are allowed")
-    
+    (fun () -> Hints.Hint_db.transparent_state (Hints.searchtable_map typeclasses_db))
+        
 (** TODO: add subinstances *)
 let existing_instance glob g pri =
   let c = global g in
@@ -74,15 +78,13 @@ let type_ctx_instance evars env ctx inst subst =
       let t' = substl subst t in
       let c', l =
 	match b with
-	| None -> interp_casted_constr_evars evars env (List.hd l) t', List.tl l
+	| None -> interp_casted_constr_evars env evars (List.hd l) t', List.tl l
 	| Some b -> substl subst b, l
       in
       let d = na, Some c', t' in
 	aux (c' :: subst, d :: instctx) l ctx
     | [] -> subst
   in aux (subst, []) inst (List.rev ctx)
-
-let refine_ref = ref (fun _ -> assert(false))
 
 let id_of_class cl =
   match cl.cl_impl with
@@ -122,7 +124,7 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
 	  (fun avoid (clname, (id, _, t)) ->
 	    match clname with
 	    | Some (cl, b) ->
-		let t = CHole (Loc.ghost, None, None) in
+		let t = CHole (Loc.ghost, None, Misctypes.IntroAnonymous, None) in
 		  t, avoid
 	    | None -> failwith ("new instance: under-applied typeclass"))
 	  cl
@@ -133,8 +135,8 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
     else tclass 
   in
   let k, u, cty, ctx', ctx, len, imps, subst =
-    let impls, ((env', ctx), imps) = interp_context_evars evars env ctx in
-    let c', imps' = interp_type_evars_impls ~impls evars env' tclass in
+    let impls, ((env', ctx), imps) = interp_context_evars env evars ctx in
+    let c', imps' = interp_type_evars_impls ~impls env' evars tclass in
     let len = List.length ctx in
     let imps = imps @ Impargs.lift_implicits len imps' in
     let ctx', c = decompose_prod_assum c' in
@@ -200,7 +202,7 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
 	match props with
 	| None -> if List.is_empty k.cl_props then Some (Inl subst) else None
 	| Some (Inr term) ->
-	    let c = interp_casted_constr_evars evars env' term cty in
+	    let c = interp_casted_constr_evars env' evars term cty in
 	      Some (Inr (c, subst))
 	| Some (Inl props) ->
 	    let get_id =
@@ -230,7 +232,7 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
 			   k.cl_projs;
 			 c :: props, rest'
 		     with Not_found ->
-		       (CHole (Loc.ghost, Some Evar_kinds.GoalEvar, None) :: props), rest
+		       (CHole (Loc.ghost, Some Evar_kinds.GoalEvar, Misctypes.IntroAnonymous, None) :: props), rest
 		   else props, rest)
 		([], props) k.cl_props
 	    in
@@ -278,7 +280,7 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
           let ctx = Evd.universe_context evm in
 	  declare_instance_constant k pri global imps ?hook id 
             poly ctx (Option.get term) termtype
-	else begin
+	else if !refine_instance || Option.is_empty term then begin
 	  let kind = Decl_kinds.Global, poly, Decl_kinds.DefinitionBody Decl_kinds.Instance in
 	    if Flags.is_program_mode () then
 	      let hook vis gr =
@@ -302,17 +304,31 @@ let new_instance ?(abstract=false) ?(global=false) poly ctx (instid, bk, cl) pro
 	    else
 	      (Flags.silently 
 	       (fun () ->
-		Lemmas.start_proof id kind (Evd.evar_universe_context evm) termtype
+                  (* spiwack: it is hard to reorder the actions to do
+                     the pretyping after the proof has opened. As a
+                     consequence, we use the low-level primitives to code
+                     the refinement manually.*)
+		let gls = List.rev (Evd.future_goals evm) in
+                let evm = Evd.reset_future_goals evm in
+                Lemmas.start_proof id kind evm termtype
 		(Lemmas.mk_hook
                   (fun _ -> instance_hook k pri global imps ?hook));
                  (* spiwack: I don't know what to do with the status here. *)
-		if not (Option.is_empty term) then 
-		  ignore (Pfedit.by (!refine_ref (evm, Option.get term)))
+		if not (Option.is_empty term) then
+                  let init_refine =
+                    Tacticals.New.tclTHENLIST [
+                      Proofview.Refine.refine (fun evm -> evm, Option.get term);
+                      Proofview.Unsafe.tclNEWGOALS gls;
+                      Tactics.New.reduce_after_refine;
+                    ]
+                  in
+		  ignore (Pfedit.by init_refine)
 		else if Flags.is_auto_intros () then
 		  ignore (Pfedit.by (Tacticals.New.tclDO len Tactics.intro));
 		(match tac with Some tac -> ignore (Pfedit.by tac) | None -> ())) ();
 	       id)
-	end)
+	end
+      else Errors.error "Unsolved obligations remaining.")
 	
 let named_of_rel_context l =
   let acc, ctx =
@@ -327,7 +343,7 @@ let named_of_rel_context l =
 let context poly l =
   let env = Global.env() in
   let evars = ref Evd.empty in
-  let _, ((env', fullctx), impls) = interp_context_evars evars env l in
+  let _, ((env', fullctx), impls) = interp_context_evars env evars l in
   let subst = Evarutil.evd_comb0 Evarutil.nf_evars_and_universes evars in
   let fullctx = Context.map_rel_context subst fullctx in
   let ce t = Evarutil.check_evars env Evd.empty !evars t in

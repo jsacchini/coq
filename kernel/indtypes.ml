@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -209,7 +209,7 @@ let param_ccls params =
 (* TODO check that we don't overgeneralize construcors/inductive arities with
    universes that are absent from them. Is it possible? 
 *)
-let typecheck_inductive env ctx mie =
+let typecheck_inductive env mie =
   let () = match mie.mind_entry_inds with
   | [] -> anomaly (Pp.str "empty inductive types declaration")
   | _ -> ()
@@ -217,16 +217,17 @@ let typecheck_inductive env ctx mie =
   (* Check unicity of names *)
   mind_check_names mie;
   (* Params are typed-checked here *)
-  let env' = push_context ctx env in
+  let env' = push_context mie.mind_entry_universes env in
   let (env_params, params) = infer_local_decls env' mie.mind_entry_params in
   (* We first type arity of each inductive definition *)
-  (* This allows to build the environment of arities and to share *)
+  (* This allows building the environment of arities and to share *)
   (* the set of constraints *)
   let env_arities, rev_arity_list =
     List.fold_left
       (fun (env_ar,l) ind ->
          (* Arities (without params) are typed-checked here *)
-         let arity, expltype = 
+	 let expltype = ind.mind_entry_template in
+         let arity =
 	   if isArity ind.mind_entry_arity then
 	     let (ctx,s) = dest_arity env_params ind.mind_entry_arity in
 	       match s with
@@ -237,12 +238,12 @@ let typecheck_inductive env ctx mie =
 	         let proparity = infer_type env_params (mkArity (ctx, prop_sort)) in
 		 let (cctx, _) = destArity proparity.utj_val in
 		   (* Any universe is well-formed, we don't need to check [s] here *)
-		   mkArity (cctx, s), not (Sorts.is_small s)
+		   mkArity (cctx, s)
 	       | _ -> 
 		 let arity = infer_type env_params ind.mind_entry_arity in
-		   arity.utj_val, not (Sorts.is_small s)
+		   arity.utj_val
 	   else let arity = infer_type env_params ind.mind_entry_arity in
-		  arity.utj_val, false
+		  arity.utj_val
 	 in
 	 let (sign, deflev) = dest_arity env_params arity in
 	 let inflev = 
@@ -299,8 +300,8 @@ let typecheck_inductive env ctx mie =
       let full_polymorphic () = 
 	let defu = Term.univ_of_sort def_level in
 	let is_natural =
-	  check_leq (universes env') infu defu && 
-	    not (is_type0m_univ defu && not is_unit)
+	  type_in_type env || (check_leq (universes env') infu defu &&
+	    not (is_type0m_univ defu && not is_unit))
 	in
 	let _ =
 	  (** Impredicative sort, always allow *)
@@ -326,7 +327,7 @@ let typecheck_inductive env ctx mie =
 	    (* conclusions of the parameters *)
             (* We enforce [u >= lev] in case [lev] has a strict upper *)
             (* constraints over [u] *)
-	    let b = check_leq (universes env') infu u in
+	    let b = type_in_type env || check_leq (universes env') infu u in
 	      if not b then
 		anomaly ~label:"check_inductive" 
 		  (Pp.str"Incorrect universe " ++
@@ -633,7 +634,7 @@ let allowed_sorts is_smashed s =
 (* Previous comment: *)
 (* Unitary/empty Prop: elimination to all sorts are realizable *)
 (* unless the type is large. If it is large, forbids large elimination *)
-(* which otherwise allows to simulate the inconsistent system Type:Type. *)
+(* which otherwise allows simulating the inconsistent system Type:Type. *)
 (* -> this is now handled by is_smashed: *)
 (* - all_sorts in case of small, unitary Prop (not smashed) *)
 (* - logical_sorts in case of large, unitary Prop (smashed) *)
@@ -661,34 +662,70 @@ exception UndefinableExpansion
     build an expansion function.
     The term built is expecting to be substituted first by 
     a substitution of the form [params, x : ind params] *)
-let compute_expansion ((kn, _ as ind), u) params ctx =
+let compute_projections ((kn, _ as ind), u as indsp) n x nparamargs params
+    mind_consnrealdecls mind_consnrealargs ctx =
   let mp, dp, l = repr_mind kn in
-  let make_proj id = Constant.make1 (KerName.make mp dp (Label.of_id id)) in
-  let projections acc (na, b, t) =
+  let rp = mkApp (mkIndU indsp, rel_vect 0 nparamargs) in
+  let ci = 
+    let print_info =
+      { ind_tags = []; cstr_tags = [|rel_context_tags ctx|]; style = LetStyle } in
+      { ci_ind     = ind;
+	ci_npar    = nparamargs;
+	ci_cstr_ndecls = mind_consnrealdecls;
+	ci_cstr_nargs = mind_consnrealargs;
+	ci_pp_info = print_info }
+  in
+  let len = List.length ctx in
+  let x = Name x in
+  let compat_body ccl i = 
+    (* [ccl] is defined in context [params;x:rp] *)
+    (* [ccl'] is defined in context [params;x:rp;x:rp] *)
+    let ccl' = liftn 1 2 ccl in
+    let p = mkLambda (x, lift 1 rp, ccl') in
+    let branch = it_mkLambda_or_LetIn (mkRel (len - i)) ctx in
+    let body = mkCase (ci, p, mkRel 1, [|lift 1 branch|]) in
+      it_mkLambda_or_LetIn (mkLambda (x,rp,body)) params
+  in
+  let projections (na, b, t) (i, j, kns, pbs, subst) =
     match b with
-    | Some c -> acc
-    | None -> 
+    | Some c -> (i, j+1, kns, pbs, substl subst c :: subst)
+    | None ->
       match na with
-      | Name id -> make_proj id :: acc
+      | Name id ->
+	let kn = Constant.make1 (KerName.make mp dp (Label.of_id id)) in
+	let ty = substl subst (liftn 1 j t) in
+	let term = mkProj (Projection.make kn true, mkRel 1) in
+	let fterm = mkProj (Projection.make kn false, mkRel 1) in
+	let compat = compat_body ty (j - 1) in
+	let etab = it_mkLambda_or_LetIn (mkLambda (x, rp, term)) params in
+	let etat = it_mkProd_or_LetIn (mkProd (x, rp, ty)) params in
+	let body = { proj_ind = fst ind; proj_npars = nparamargs;
+		     proj_arg = i; proj_type = ty; proj_eta = etab, etat; 
+		     proj_body = compat } in
+	  (i + 1, j + 1, kn :: kns, body :: pbs, fterm :: subst)
       | Anonymous -> raise UndefinableExpansion
   in
-  let projs = List.fold_left projections [] ctx in
-  let projarr = Array.of_list projs in
-  let exp = 
-    mkApp (mkConstructU ((ind, 1),u),
-	   Array.append (rel_appvect 1 params)
- 	     (Array.map (fun p -> mkProj (p, mkRel 1)) projarr))
-   in exp, projarr
+  let (_, _, kns, pbs, subst) = List.fold_right projections ctx (0, 1, [], [], []) in
+    Array.of_list (List.rev kns),
+    Array.of_list (List.rev pbs)
 
 let build_inductive env p prv ctx env_ar params kn isrecord isfinite inds nmr recargs =
   let ntypes = Array.length inds in
   (* Compute the set of used section variables *)
-  let hyps =  used_section_variables env inds in
+  let hyps = used_section_variables env inds in
   let nparamargs = rel_context_nhyps params in
   let nparamdecls = rel_context_length params in
+  let subst, ctx = Univ.abstract_universes p ctx in
+  let params = Vars.subst_univs_level_context subst params in
+  let env_ar = 
+    let ctx = Environ.rel_context env_ar in 
+    let ctx' = Vars.subst_univs_level_context subst ctx in
+      Environ.push_rel_context ctx' env
+  in
   (* Check one inductive *)
   let build_one_packet (id,cnames,lc,(ar_sign,ar_kind)) recarg =
     (* Type of constructors in normal form *)
+    let lc = Array.map (Vars.subst_univs_level_constr subst) lc in
     let splayed_lc = Array.map (dest_prod_assum env_ar) lc in
     let nf_lc = Array.map (fun (d,b) -> it_mkProd_or_LetIn b d) splayed_lc in
     let consnrealdecls =
@@ -707,7 +744,8 @@ let build_inductive env p prv ctx env_ar params kn isrecord isfinite inds nmr re
 	let s = sort_of_univ defs in
 	let kelim = allowed_sorts info s in
 	let ar = RegularArity 
-	  { mind_user_arity = ar; mind_sort = s; } in
+	  { mind_user_arity = Vars.subst_univs_level_constr subst ar; 
+	    mind_sort = sort_of_univ (Univ.subst_univs_level_universe subst defs); } in
 	  ar, kelim in
     (* Assigning VM tags to constructors *)
     let nconst, nblock = ref 0, ref 0 in
@@ -726,9 +764,9 @@ let build_inductive env p prv ctx env_ar params kn isrecord isfinite inds nmr re
       (* Build the inductive packet *)
       { mind_typename = id;
 	mind_arity = arkind;
-	mind_arity_ctxt = ar_sign;
+	mind_arity_ctxt = Vars.subst_univs_level_context subst ar_sign;
 	mind_nrealargs = rel_context_nhyps ar_sign - nparamargs;
-	mind_nrealargs_ctxt = rel_context_length ar_sign - nparamdecls;
+	mind_nrealdecls = rel_context_length ar_sign - nparamdecls;
 	mind_kelim = kelim;
 	mind_consnames = Array.of_list cnames;
 	mind_consnrealdecls = consnrealdecls;
@@ -741,18 +779,28 @@ let build_inductive env p prv ctx env_ar params kn isrecord isfinite inds nmr re
 	mind_reloc_tbl = rtbl;
       } in
   let packets = Array.map2 build_one_packet inds recargs in
+  let pkt = packets.(0) in	  
   let isrecord = 
-    let pkt = packets.(0) in
-      if isrecord (* || (Array.length pkt.mind_consnames = 1 &&  *)
-        (* inductive_sort_family pkt <> InProp) *) then
-	let rctx, _ = decompose_prod_assum pkt.mind_nf_lc.(0) in
-	let u = if p then Univ.UContext.instance ctx else Univ.Instance.empty in
-	try 
-	  let exp = compute_expansion ((kn, 0), u) params 
-	    (List.firstn pkt.mind_consnrealdecls.(0) rctx) 
-	  in Some exp
-	with UndefinableExpansion -> None
-      else None
+    match isrecord with
+    | Some (Some rid) when pkt.mind_kelim == all_sorts && Array.length pkt.mind_consnames == 1
+			   && pkt.mind_consnrealargs.(0) > 0 ->
+      (** The elimination criterion ensures that all projections can be defined. *)
+      let u = 
+	if p then 
+	  subst_univs_level_instance subst (Univ.UContext.instance ctx)
+	else Univ.Instance.empty 
+      in
+      let indsp = ((kn, 0), u) in
+      let rctx, _ = decompose_prod_assum (subst1 (mkIndU indsp) pkt.mind_nf_lc.(0)) in
+	(try 
+	   let fields = List.firstn pkt.mind_consnrealdecls.(0) rctx in
+	   let kns, projs = 
+	     compute_projections indsp pkt.mind_typename rid nparamargs params
+	       pkt.mind_consnrealdecls pkt.mind_consnrealargs fields
+	   in Some (Some (rid, kns, projs))
+	 with UndefinableExpansion -> Some None)
+    | Some _ -> Some None
+    | None -> None
   in
     (* Build the mutual inductive *)
     { mind_record = isrecord;
@@ -773,10 +821,7 @@ let build_inductive env p prv ctx env_ar params kn isrecord isfinite inds nmr re
 
 let check_inductive env kn mie =
   (* First type-check the inductive definition *)
-  let env = push_context mie.mind_entry_universes env in
-  let (env_ar, params, inds) = 
-    typecheck_inductive env mie.mind_entry_universes mie 
-  in
+  let (env_ar, params, inds) = typecheck_inductive env mie in
   (* Then check positivity conditions *)
   let (nmr,recargs) = check_positivity kn env_ar params inds in
   (* Build the inductive packets *)

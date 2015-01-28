@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -127,6 +127,7 @@ val exists_modtype : full_path -> bool
 val exists_dir : DirPath.t -> bool
 val exists_section : DirPath.t -> bool (** deprecated synonym of [exists_dir] *)
 val exists_module : DirPath.t -> bool (** deprecated synonym of [exists_dir] *)
+val exists_tactic : full_path -> bool (** deprecated synonym of [exists_dir] *)
 
 (** {6 These functions locate qualids into full user names } *)
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -442,7 +442,7 @@ let interp_prim_token =
 
 let rec rcp_of_glob looked_for = function
   | GVar (loc,id) -> RCPatAtom (loc,Some id)
-  | GHole (loc,_,_) -> RCPatAtom (loc,None)
+  | GHole (loc,_,_,_) -> RCPatAtom (loc,None)
   | GRef (loc,g,_) -> looked_for g; RCPatCstr (loc, g,[],[])
   | GApp (loc,GRef (_,g,_),l) ->
     looked_for g; RCPatCstr (loc, g, List.map (rcp_of_glob looked_for) l,[])
@@ -535,7 +535,7 @@ let compute_scope_class t =
   let t', _ = decompose_appvect (Reductionops.whd_betaiotazeta Evd.empty t) in
   match kind_of_term t' with
   | Var _ | Const _ | Ind _ -> ScopeRef (global_of_constr t')
-  | Proj (p, c) -> ScopeRef (ConstRef p)
+  | Proj (p, c) -> ScopeRef (ConstRef (Projection.constant p))
   | Sort _ -> ScopeSort
   |  _ -> raise Not_found
 
@@ -940,17 +940,28 @@ let pr_visibility prglob = function
 (* Mapping notations to concrete syntax *)
 
 type unparsing_rule = unparsing list * precedence
-
+type extra_unparsing_rules = (string * string) list
 (* Concrete syntax for symbolic-extension table *)
 let printing_rules =
-  ref (String.Map.empty : unparsing_rule String.Map.t)
+  ref (String.Map.empty : (unparsing_rule * extra_unparsing_rules) String.Map.t)
 
-let declare_notation_printing_rule ntn unpl =
-  printing_rules := String.Map.add ntn unpl !printing_rules
+let declare_notation_printing_rule ntn ~extra unpl =
+  printing_rules := String.Map.add ntn (unpl,extra) !printing_rules
 
 let find_notation_printing_rule ntn =
-  try String.Map.find ntn !printing_rules
+  try fst (String.Map.find ntn !printing_rules)
   with Not_found -> anomaly (str "No printing rule found for " ++ str ntn)
+let find_notation_extra_printing_rules ntn =
+  try snd (String.Map.find ntn !printing_rules)
+  with Not_found -> []
+let add_notation_extra_printing_rule ntn k v =
+  try
+    printing_rules := 
+      let p, pp = String.Map.find ntn !printing_rules in
+      String.Map.add ntn (p, (k,v) :: pp) !printing_rules
+  with Not_found ->
+    user_err_loc (Loc.ghost,"add_notation_extra_printing_rule",
+      str "No such Notation.")
 
 (**********************************************************************)
 (* Synchronisation with reset *)
@@ -990,4 +1001,4 @@ let with_notation_protection f x =
   with reraise ->
     let reraise = Errors.push reraise in
     let () = unfreeze fs in
-    raise reraise
+    iraise reraise

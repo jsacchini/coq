@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -12,31 +12,38 @@ val boot : bool ref
 val load_init : bool ref
 
 val batch_mode : bool ref
-type compilation_mode = BuildVo | BuildVi | Vi2Vo
+type compilation_mode = BuildVo | BuildVio | Vio2Vo
 val compilation_mode : compilation_mode ref
 
-type async_proofs = APoff | APonLazy | APonParallel of int
+type async_proofs = APoff | APonLazy | APon
 val async_proofs_mode : async_proofs ref
+type cache = Force
+val async_proofs_cache : cache option ref
 val async_proofs_n_workers : int ref
+val async_proofs_n_tacworkers : int ref
 val async_proofs_private_flags : string option ref
 val async_proofs_is_worker : unit -> bool
-val async_proofs_always_delegate : bool ref
+val async_proofs_is_master : unit -> bool
+val async_proofs_full : bool ref
 val async_proofs_never_reopen_branch : bool ref
 val async_proofs_flags_for_workers : string list ref
+val async_proofs_worker_id : string ref
+type priority = Low | High
+val async_proofs_worker_priority : priority ref
+val string_of_priority : priority -> string
+val priority_of_string : string -> priority
 
 val debug : bool ref
+val in_debugger : bool ref
+val in_toplevel : bool ref
 
 val profile : bool
 
 val print_emacs : bool ref
-
-val xml_export : bool ref
+val coqtop_ui : bool ref
 
 val ide_slave : bool ref
 val ideslave_coqtop_flags : string option ref
-
-val feedback_goals : bool ref
-
 
 val time : bool ref
 
@@ -67,10 +74,6 @@ val if_verbose : ('a -> unit) -> 'a -> unit
 
 val make_auto_intros : bool -> unit
 val is_auto_intros : unit -> bool
-
-(** Terminal colouring *)
-val make_term_color : bool -> unit
-val is_term_color : unit -> bool
 
 val program_mode : bool ref
 val is_program_mode : unit -> bool
@@ -134,3 +137,6 @@ val print_mod_uid : bool ref
 val tactic_context_compat : bool ref
 (** Set to [true] to trigger the compatibility bugged context matching (old
     context vs. appcontext) is set. *)
+
+(** Termination/productivity checking *)
+val do_termination_checking : bool ref

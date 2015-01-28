@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -38,7 +38,7 @@ let call_hook fix_exn hook l c =
   try hook l c
   with e when Errors.noncritical e ->
     let e = Errors.push e in
-    raise (fix_exn e)
+    iraise (fix_exn e)
 
 (* Support for mutually proved theorems *)
 
@@ -47,7 +47,7 @@ let retrieve_first_recthm = function
       (pi2 (Global.lookup_named id),variable_opacity id)
   | ConstRef cst ->
       let cb = Global.lookup_constant cst in
-      (body_of_constant cb, is_opaque cb)
+      (Global.body_of_constant_body cb, is_opaque cb)
   | _ -> assert false
 
 let adjust_guardness_conditions const = function
@@ -71,9 +71,9 @@ let adjust_guardness_conditions const = function
                   with Not_found -> false in 
                 if exists c e then e else Environ.add_constant c cb e in
               let env = Declareops.fold_side_effects (fun env -> function
-                | SEsubproof (c, cb) -> add c cb env
+                | SEsubproof (c, cb,_) -> add c cb env
                 | SEscheme (l,_) ->
-                    List.fold_left (fun e (_,c,cb) -> add c cb e) env l)
+                    List.fold_left (fun e (_,c,cb,_) -> add c cb e) env l)
                 env (Declareops.uniquize_side_effects eff) in
               let indexes =
 	        search_guard Loc.ghost env
@@ -93,7 +93,7 @@ let find_mutually_recursive_statements thms =
           (match kind_of_term t with
           | Ind ((kn,_ as ind), u) when
               let mind = Global.lookup_mind kn in
-              mind.mind_finite && Option.is_empty b ->
+              mind.mind_finite == Decl_kinds.Finite && Option.is_empty b ->
               [ind,x,i],[]
           | _ ->
               error "Decreasing argument is not an inductive assumption.")
@@ -110,7 +110,7 @@ let find_mutually_recursive_statements thms =
           match kind_of_term t with
           | Ind ((kn,_ as ind),u) when
                 let mind = Global.lookup_mind kn in
-                mind.mind_finite && Option.is_empty b ->
+                mind.mind_finite <> Decl_kinds.CoFinite && Option.is_empty b ->
               [ind,x,i]
           | _ ->
               []) 0 (List.rev whnf_hyp_hds)) in
@@ -120,7 +120,7 @@ let find_mutually_recursive_statements thms =
         match kind_of_term whnf_ccl with
         | Ind ((kn,_ as ind),u) when
               let mind = Global.lookup_mind kn in
-              Int.equal mind.mind_ntypes n && not mind.mind_finite ->
+              Int.equal mind.mind_ntypes n && mind.mind_finite == Decl_kinds.CoFinite ->
             [ind,x,0]
         | _ ->
             [] in
@@ -188,22 +188,26 @@ let look_for_possibly_mutual_statements = function
 
 let save id const cstrs do_guard (locality,poly,kind) hook =
   let fix_exn = Future.fix_exn_of const.Entries.const_entry_body in
-  let const = adjust_guardness_conditions const do_guard in
-  let k = Kindops.logical_kind_of_goal_kind kind in
-  let l,r = match locality with
-    | Discharge when Lib.sections_are_opened () ->
-	let c = SectionLocalDef const in
-	let _ = declare_variable id (Lib.cwd(), c, k) in
-	(Local, VarRef id)
-    | Local | Global | Discharge ->
-        let local = match locality with
-        | Local | Discharge -> true
-        | Global -> false
-        in
-        let kn = declare_constant id ~local (DefinitionEntry const, k) in
-	(locality, ConstRef kn) in
-  definition_message id;
-  call_hook fix_exn hook l r
+  try
+    let const = adjust_guardness_conditions const do_guard in
+    let k = Kindops.logical_kind_of_goal_kind kind in
+    let l,r = match locality with
+      | Discharge when Lib.sections_are_opened () ->
+          let c = SectionLocalDef const in
+          let _ = declare_variable id (Lib.cwd(), c, k) in
+          (Local, VarRef id)
+      | Local | Global | Discharge ->
+          let local = match locality with
+          | Local | Discharge -> true
+          | Global -> false
+          in
+          let kn = declare_constant id ~local (DefinitionEntry const, k) in
+          (locality, ConstRef kn) in
+    definition_message id;
+    call_hook (fun exn -> exn) hook l r
+  with e when Errors.noncritical e ->
+    let e = Errors.push e in
+    iraise (fix_exn e)
 
 let default_thm_id = Id.of_string "Unnamed_thm"
 
@@ -351,7 +355,7 @@ let universe_proof_terminator compute_guard hook =
           save_anonymous_with_strength proof kind id
       end
 
-let start_proof id kind ctx ?sign c ?init_tac ?(compute_guard=[]) hook =
+let start_proof id kind sigma ?sign c ?init_tac ?(compute_guard=[]) hook =
   let terminator = standard_proof_terminator compute_guard hook in
   let sign = 
     match sign with
@@ -359,9 +363,9 @@ let start_proof id kind ctx ?sign c ?init_tac ?(compute_guard=[]) hook =
     | None -> initialize_named_context_for_proof ()
   in
   !start_hook c;
-  Pfedit.start_proof id kind ctx sign c ?init_tac terminator
+  Pfedit.start_proof id kind sigma sign c ?init_tac terminator
 
-let start_proof_univs id kind ctx ?sign c ?init_tac ?(compute_guard=[]) hook =
+let start_proof_univs id kind sigma ?sign c ?init_tac ?(compute_guard=[]) hook =
   let terminator = universe_proof_terminator compute_guard hook in
   let sign = 
     match sign with
@@ -369,7 +373,7 @@ let start_proof_univs id kind ctx ?sign c ?init_tac ?(compute_guard=[]) hook =
     | None -> initialize_named_context_for_proof ()
   in
   !start_hook c;
-  Pfedit.start_proof id kind ctx sign c ?init_tac terminator
+  Pfedit.start_proof id kind sigma sign c ?init_tac terminator
 
 let rec_tac_initializer finite guard thms snl =
   if finite then
@@ -435,9 +439,9 @@ let start_proof_com kind thms hook =
   let env0 = Global.env () in
   let evdref = ref (Evd.from_env env0) in
   let thms = List.map (fun (sopt,(bl,t,guard)) ->
-    let impls, ((env, ctx), imps) = interp_context_evars evdref env0 bl in
-    let t', imps' = interp_type_evars_impls ~impls evdref env t in
-    check_evars_are_solved env Evd.empty !evdref;
+    let impls, ((env, ctx), imps) = interp_context_evars env0 evdref bl in
+    let t', imps' = interp_type_evars_impls ~impls env evdref t in
+    check_evars_are_solved env !evdref (Evd.empty,!evdref);
     let ids = List.map pi1 ctx in
       (compute_proof_name (pi1 kind) sopt,
       (nf_evar !evdref (it_mkProd_or_LetIn t' ctx),
@@ -447,7 +451,7 @@ let start_proof_com kind thms hook =
   let recguard,thms,snl = look_for_possibly_mutual_statements thms in
   let evd, nf = Evarutil.nf_evars_and_universes !evdref in
   let thms = List.map (fun (n, (t, info)) -> (n, (nf t, info))) thms in
-  start_proof_with_initialization kind (Evd.evar_universe_context evd) 
+  start_proof_with_initialization kind evd
     recguard thms snl hook
 
 
@@ -459,7 +463,8 @@ let save_proof ?proof = function
   | Vernacexpr.Proved (is_opaque,idopt) ->
       let (proof_obj,terminator) =
         match proof with
-        | None -> Proof_global.close_proof (fun x -> x)
+        | None ->
+            Proof_global.close_proof ~keep_body_ucst_sepatate:false (fun x -> x)
         | Some proof -> proof
       in
       (* if the proof is given explicitly, nothing has to be deleted *)

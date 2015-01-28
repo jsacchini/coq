@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -53,7 +53,8 @@ type projection_body = {
   proj_npars : int;
   proj_arg : int;
   proj_type : types; (* Type under params *)
-  proj_body : constr; (* For compatibility, the match version *)
+  proj_eta : constr * types; (* Eta-expanded term and type *)
+  proj_body : constr; (* For compatibility with VMs only, the match version *)
 }
 
 type constant_def =
@@ -75,9 +76,11 @@ type constant_body = {
     const_proj : projection_body option;
     const_inline_code : bool }
 
+type seff_env = [ `Nothing | `Opaque of Constr.t * Univ.universe_context_set ]
+
 type side_effect =
-  | SEsubproof of constant * constant_body
-  | SEscheme of (inductive * constant * constant_body) list * string
+  | SEsubproof of constant * constant_body * seff_env
+  | SEscheme of (inductive * constant * constant_body * seff_env) list * string
     
 (** {6 Representation of mutual inductive types in the kernel } *)
 
@@ -95,6 +98,15 @@ type wf_paths = recarg Rtree.t
    with      In (params) : Un := cn1 : Tn1 | ... | cnpn : Tnpn
 v}
 *)
+
+(** Record information:
+    If the record is not primitive, then None
+    Otherwise, we get:
+    - The identifier for the binder name of the record in primitive projections.
+    - The constants associated to each projection.
+    - The checked projection bodies. *)
+
+type record_body = (Id.t * constant array * projection_body array) option
 
 type regular_inductive_arity = {
   mind_user_arity : types;
@@ -123,18 +135,18 @@ type one_inductive_body = {
 
     mind_nrealargs : int; (** Number of expected real arguments of the type (no let, no params) *)
 
-    mind_nrealargs_ctxt : int; (** Length of realargs context (with let, no params) *)
+    mind_nrealdecls : int; (** Length of realargs context (with let, no params) *)
 
     mind_kelim : sorts_family list; (** List of allowed elimination sorts *)
 
     mind_nf_lc : types array; (** Head normalized constructor types so that their conclusion is atomic *)
 
-    mind_consnrealdecls : int array;
- (** Length of the signature of the constructors (with let, w/o params)
+    mind_consnrealargs : int array;
+ (** Number of expected proper arguments of the constructors (w/o params)
     (not used in the kernel) *)
 
-    mind_consnrealargs : int array;
- (** Length of the signature of the constructors (w/o let, w/o params)
+    mind_consnrealdecls : int array;
+ (** Length of the signature of the constructors (with let, w/o params)
     (not used in the kernel) *)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
@@ -152,11 +164,9 @@ type mutual_inductive_body = {
 
     mind_packets : one_inductive_body array;  (** The component of the mutual inductive block *)
 
-    mind_record : (constr * constant array) option;  
-    (** Whether the inductive type has been declared as a record, 
-	In that case we get its canonical eta-expansion and list of projections. *)
+    mind_record : record_body option; (** The record information *)
 
-    mind_finite : bool;  (** Whether the type is inductive or coinductive *)
+    mind_finite : Decl_kinds.recursivity_kind;  (** Whether the type is inductive or coinductive *)
 
     mind_ntypes : int;  (** Number of types in the block *)
 
@@ -241,17 +251,11 @@ and module_body =
     mod_delta : Mod_subst.delta_resolver;
     mod_retroknowledge : Retroknowledge.action list }
 
-(** A [module_type_body] is similar to a [module_body], with
-    no implementation and retroknowledge fields *)
+(** A [module_type_body] is just a [module_body] with no
+    implementation ([mod_expr] always [Abstract]) and also
+    an empty [mod_retroknowledge] *)
 
-and module_type_body =
-  { typ_mp : module_path; (** path of the module type *)
-    typ_expr : module_signature; (** expanded type *)
-    (** algebraic expression, kept if it's relevant for extraction  *)
-    typ_expr_alg : module_expression option;
-    typ_constraints : Univ.constraints;
-    (** quotiented set of equivalent constants and inductive names *)
-    typ_delta : Mod_subst.delta_resolver}
+and module_type_body = module_body
 
 (** Extra invariants :
 

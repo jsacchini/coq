@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -84,7 +84,7 @@ let kind_of_head env t =
   | Meta _ | Evar _ -> NotImmediatelyComputableHead
   | App (c,al) -> aux k (Array.to_list al @ l) c b
   | Proj (p,c) ->
-      (try on_subterm k (c :: l) b (constant_head p)
+      (try on_subterm k (c :: l) b (constant_head (Projection.constant p))
        with Not_found -> assert false)
 
   | Case (_,_,c,_) -> aux k [] c true
@@ -123,7 +123,7 @@ let compute_head = function
    let is_Def = function Declarations.Def _ -> true | _ -> false in
    let body = 
      if cb.Declarations.const_proj = None && is_Def cb.Declarations.const_body
-     then Declareops.body_of_constant cb else None 
+     then Declareops.body_of_constant (Environ.opaque_tables env) cb else None 
    in
      (match body with
      | None -> RigidHead (RigidParameter cst)

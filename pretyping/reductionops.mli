@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -41,6 +41,7 @@ module Cst_stack : sig
   val add_cst : constr -> t -> t
   val best_cst : t -> (constr * constr list) option
   val best_replace : constr -> t -> constr -> constr
+  val reference : t -> Constant.t option
   val pr : t -> Pp.std_ppcmds
 end
 
@@ -50,16 +51,16 @@ module Stack : sig
 
   val pr_app_node : ('a -> Pp.std_ppcmds) -> 'a app_node -> Pp.std_ppcmds
 
-  type 'a cst_member = 
+  type cst_member =
     | Cst_const of pconstant
-    | Cst_proj of projection * 'a
+    | Cst_proj of projection
 
   type 'a member =
   | App of 'a app_node
   | Case of case_info * 'a * 'a array * Cst_stack.t
-  | Proj of int * int * projection
+  | Proj of int * int * projection * Cst_stack.t
   | Fix of fixpoint * 'a t * Cst_stack.t
-  | Cst of 'a cst_member * int (** current foccussed arg *) * int list (** remaining args *)
+  | Cst of cst_member * int (** current foccussed arg *) * int list (** remaining args *)
     * 'a t * Cst_stack.t
   | Shift of int
   | Update of 'a
@@ -237,7 +238,7 @@ val find_conclusion : env -> evar_map -> constr -> (constr,constr) kind_of_term
 val is_arity : env ->  evar_map -> constr -> bool
 val is_sort : env -> evar_map -> types -> bool
 
-val contract_fix : ?env:Environ.env -> fixpoint -> constr
+val contract_fix : ?env:Environ.env -> ?reference:Constant.t -> fixpoint -> constr
 val fix_recarg : fixpoint -> constr Stack.t -> (int * constr) option
 
 (** {6 Querying the kernel conversion oracle: opaque/transparent constants } *)
@@ -250,7 +251,7 @@ type conversion_test = constraints -> constraints
 val pb_is_equal : conv_pb -> bool
 val pb_equal : conv_pb -> conv_pb
 
-val sort_cmp : conv_pb -> sorts -> sorts -> universes -> unit
+val sort_cmp : env -> conv_pb -> sorts -> sorts -> universes -> unit
 
 val is_conv : env ->  evar_map -> constr -> constr -> bool
 val is_conv_leq : env ->  evar_map -> constr -> constr -> bool
@@ -260,7 +261,7 @@ val is_trans_conv : transparent_state -> env -> evar_map -> constr -> constr -> 
 val is_trans_conv_leq : transparent_state -> env ->  evar_map -> constr -> constr -> bool
 val is_trans_fconv : conv_pb -> transparent_state -> env ->  evar_map -> constr -> constr -> bool
 
-(** [check_conv} Checks universe constraints only.
+(** [check_conv] Checks universe constraints only.
     pb defaults to CUMUL and ts to a full transparent state.
  *)
 val check_conv : ?pb:conv_pb -> ?ts:transparent_state -> env ->  evar_map -> constr -> constr -> bool

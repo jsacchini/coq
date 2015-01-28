@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -30,7 +30,9 @@ type class_rawexpr = FunClass | SortClass | RefClass of reference or_by_notation
    similar, they do not seem to mean the same thing. *)
 type goal_selector =
   | SelectNth of int
+  | SelectId of Id.t
   | SelectAll
+  | SelectAllParallel
 
 type goal_identifier = string
 type scope_name = string
@@ -72,7 +74,7 @@ type printable =
   | PrintScopes
   | PrintScope of string
   | PrintVisibility of string option
-  | PrintAbout of reference or_by_notation
+  | PrintAbout of reference or_by_notation*int option
   | PrintImplicit of reference or_by_notation
   | PrintAssumptions of bool * bool * reference or_by_notation
   | PrintStrategy of reference or_by_notation option
@@ -123,6 +125,7 @@ type hints_expr =
   | HintsImmediate of reference_or_constr list
   | HintsUnfold of reference list
   | HintsTransparency of reference list * bool
+  | HintsMode of reference * bool list
   | HintsConstructors of reference list
   | HintsExtern of int * constr_expr option * raw_tactic_expr
 
@@ -138,7 +141,6 @@ type instance_flag  = bool option
   (* Some true = Backward instance; Some false = Forward instance, None = NoInstance *)
 type export_flag    = bool (* true = Export;        false = Import         *)
 type inductive_flag = Decl_kinds.recursivity_kind
-type infer_flag     = bool (* true = try to Infer record; false = nothing  *)
 type onlyparsing_flag = Flags.compat_version option
  (* Some v = Parse only;  None = Print also.
     If v<>Current, it contains the name of the coq version
@@ -175,7 +177,7 @@ type local_decl_expr =
   | AssumExpr of lname * constr_expr
   | DefExpr of lname * constr_expr * constr_expr option
 
-type inductive_kind = Inductive_kw | CoInductive | Record | Structure | Class of bool (* true = definitional, false = inductive *)
+type inductive_kind = Inductive_kw | CoInductive | Variant | Record | Structure | Class of bool (* true = definitional, false = inductive *)
 type decl_notation = lstring * constr_expr * scope_name option
 type simple_binder = lident list  * constr_expr
 type class_binder = lident * constr_expr list
@@ -204,7 +206,7 @@ type syntax_modifier =
   | SetAssoc of Extend.gram_assoc
   | SetEntryType of string * Extend.simple_constr_prod_entry_key
   | SetOnlyParsing of Flags.compat_version
-  | SetFormat of string located
+  | SetFormat of string * string located
 
 type proof_end =
   | Admitted
@@ -223,15 +225,17 @@ type section_subset_expr =
 
 type section_subset_descr = SsAll | SsType | SsExpr of section_subset_expr
 
-(* This type allows to register inline of constants in native compiler.
+type extend_name = string * int
+
+(* This type allows registering the inlining of constants in native compiler.
    It will be extended with primitive inductive types and operators *)
 type register_kind = 
   | RegisterInline
 
 type bullet =
-    | Dash
-    | Star
-    | Plus
+    | Dash of int
+    | Star of int
+    | Plus of int
 
 (** {6 Types concerning Stm} *)
 type 'a stm_vernac =
@@ -286,6 +290,7 @@ type vernac_expr =
   | VernacNotation of
       obsolete_locality * constr_expr * (lstring * syntax_modifier list) *
       scope_name option
+  | VernacNotationAddFormat of string * string * string
 
   (* Gallina *)
   | VernacDefinition of
@@ -297,7 +302,7 @@ type vernac_expr =
   | VernacExactProof of constr_expr
   | VernacAssumption of (locality option * assumption_object_kind) *
       inline * simple_binder with_coercion list
-  | VernacInductive of private_flag * inductive_flag * infer_flag * (inductive_expr * decl_notation list) list
+  | VernacInductive of private_flag * inductive_flag * (inductive_expr * decl_notation list) list
   | VernacFixpoint of
       locality option * (fixpoint_expr * decl_notation list) list
   | VernacCoFixpoint of
@@ -318,6 +323,7 @@ type vernac_expr =
       class_rawexpr * class_rawexpr
   | VernacIdentityCoercion of obsolete_locality * lident *
       class_rawexpr * class_rawexpr
+  | VernacNameSectionHypSet of lident * section_subset_descr 
 
   (* Type classes *)
   | VernacInstance of
@@ -345,7 +351,7 @@ type vernac_expr =
 
   (* Solving *)
 
-  | VernacSolve of goal_selector * raw_tactic_expr * bool
+  | VernacSolve of goal_selector * int option * raw_tactic_expr * bool
   | VernacSolveExistential of int * constr_expr
 
   (* Auxiliary file and library management *)
@@ -377,8 +383,9 @@ type vernac_expr =
       (explicitation * bool * bool) list list
   | VernacArguments of reference or_by_notation *
       ((Name.t * bool * (Loc.t * string) option * bool * bool) list) list *
-      int * [ `ReductionDontExposeCase | `ReductionNeverUnfold | `Rename | `ExtraScopes
-            | `ClearImplicits | `ClearScopes | `DefaultImplicits ] list
+      int * [ `ReductionDontExposeCase | `ReductionNeverUnfold | `Rename |
+              `ExtraScopes | `Assert | `ClearImplicits | `ClearScopes |
+              `DefaultImplicits ] list
   | VernacArgumentsScope of reference or_by_notation *
       scope_name option list
   | VernacReserve of simple_binder list
@@ -396,7 +403,7 @@ type vernac_expr =
   | VernacGlobalCheck of constr_expr
   | VernacDeclareReduction of string * raw_red_expr
   | VernacPrint of printable
-  | VernacSearch of searchable * search_restriction
+  | VernacSearch of searchable * int option * search_restriction
   | VernacLocate of locatable
   | VernacRegister of lident * register_kind
   | VernacComments of comment list
@@ -427,7 +434,7 @@ type vernac_expr =
   | VernacToplevelControl of exn
 
   (* For extension *)
-  | VernacExtend of string * Genarg.raw_generic_argument list
+  | VernacExtend of extend_name * Genarg.raw_generic_argument list
 
   (* Flags *)
   | VernacProgram of vernac_expr
@@ -447,12 +454,13 @@ type vernac_type =
   | VtStartProof of vernac_start
   | VtSideff of vernac_sideff_type
   | VtQed of vernac_qed_type
-  | VtProofStep
+  | VtProofStep of bool (* parallelize *)
   | VtProofMode of string
-  | VtQuery of vernac_part_of_script
+  | VtQuery of vernac_part_of_script * report_with
   | VtStm of vernac_control * vernac_part_of_script
   | VtUnknown
-and vernac_qed_type = VtKeep | VtDrop (* Qed/Admitted, Abort *)
+and report_with = Stateid.t * Feedback.route_id (* feedback on id/route *)
+and vernac_qed_type = VtKeep | VtKeepAsAxiom | VtDrop (* Qed/Admitted, Abort *)
 and vernac_start = string * opacity_guarantee * Id.t list
 and vernac_sideff_type = Id.t list
 and vernac_is_alias = bool

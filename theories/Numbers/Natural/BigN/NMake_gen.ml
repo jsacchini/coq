@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -961,6 +961,11 @@ pr "  end.";
 pr "";
 
 pr " Ltac unfold_red := unfold reduce, %s." (iter_name 1 size "reduce_" ",");
+pr "";
+for i = 0 to size do
+pr " Declare Equivalent Keys reduce reduce_%i." i;
+done;
+pr " Declare Equivalent Keys reduce_n reduce_%i." (size + 1);
 
 pr "
  Ltac solve_red :=

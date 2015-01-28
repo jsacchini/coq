@@ -1,7 +1,7 @@
 (* -*- coding: utf-8 -*- *)
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -14,8 +14,6 @@
    Author: Matthieu Sozeau
    Institution: LRI, CNRS UMR 8623 - University Paris Sud
 *)
-
-(* Set Universe Polymorphism. *)
 
 (** The polymorphic identity function is defined in [Datatypes]. *)
 
@@ -47,7 +45,7 @@ Definition const {A B} (a : A) := fun _ : B => a.
 
 (** The [flip] combinator reverses the first two arguments of a function. *)
 
-Monomorphic Definition flip {A B C} (f : A -> B -> C) x y := f y x.
+Definition flip {A B C} (f : A -> B -> C) x y := f y x.
 
 (** Application as a combinator. *)
 

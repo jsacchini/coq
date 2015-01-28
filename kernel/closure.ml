@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -88,6 +88,7 @@ module type RedFlagsSig = sig
   val red_add_transparent : reds -> transparent_state -> reds
   val mkflags : red_kind list -> reds
   val red_set : reds -> red_kind -> bool
+  val red_projection : reds -> projection -> bool
 end
 
 module RedFlags = (struct
@@ -167,6 +168,10 @@ module RedFlags = (struct
     | IOTA -> incr_cnt red.r_iota iota
     | DELTA -> (* Used for Rel/Var defined in context *)
 	incr_cnt red.r_delta delta
+
+  let red_projection red p = 
+    if Projection.unfolded p then true
+    else red_set red (fCONST (Projection.constant p))
 
 end : RedFlagsSig)
 
@@ -338,10 +343,11 @@ and fterm =
   | FInd of pinductive
   | FConstruct of pconstructor
   | FApp of fconstr * fconstr array
-  | FProj of constant * fconstr
+  | FProj of projection * fconstr
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
-  | FCases of case_info * fconstr * fconstr * fconstr array
+  | FCase of case_info * fconstr * fconstr * fconstr array
+  | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
   | FLambda of int * (Name.t * constr) list * constr * fconstr subs
   | FProd of Name.t * fconstr * fconstr
   | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
@@ -371,6 +377,7 @@ let update v1 no t =
 type stack_member =
   | Zapp of fconstr array
   | Zcase of case_info * fconstr * fconstr array
+  | ZcaseT of case_info * constr * constr array * fconstr subs
   | Zproj of int * int * constant
   | Zfix of fconstr * stack
   | Zshift of int
@@ -485,72 +492,7 @@ let zupdate m s =
     Zupdate(m)::s'
   else s
 
-(* Closure optimization: *)
-let rec compact_constr (lg, subs as s) c k =
-  match kind_of_term c with
-      Rel i ->
-        if i < k then s, c else
-          (try (lg,subs), mkRel (k + lg - List.index Int.equal (i-k+1) subs)
-          with Not_found -> (lg+1, (i-k+1)::subs), mkRel (k+lg))
-    | (Sort _|Var _|Meta _|Ind _|Const _|Construct _) -> s, c
-    | Evar(ev,v) ->
-        let (s, v') = compact_vect s v k in
-        if v==v' then s, c else s, mkEvar(ev, v')
-    | Cast(a,ck,b) ->
-        let (s, a') = compact_constr s a k in
-        let (s, b') = compact_constr s b k in
-        if a==a' && b==b' then s, c else s, mkCast(a', ck, b')
-    | App(f,v) ->
-        let (s, f') = compact_constr s f k in
-        let (s, v') = compact_vect s v k in
-        if f==f' && v==v' then s, c else s, mkApp(f',v')
-    | Proj (p,t) ->
-        let (s, t') = compact_constr s t k in
-	  if t'==t then s, c else s, mkProj (p,t')
-    | Lambda(n,a,b) ->
-        let (s, a') = compact_constr s a k in
-        let (s, b') = compact_constr s b (k+1) in
-        if a==a' && b==b' then s, c else s, mkLambda(n,a',b')
-    | Prod(n,a,b) ->
-        let (s, a') = compact_constr s a k in
-        let (s, b') = compact_constr s b (k+1) in
-        if a==a' && b==b' then s, c else s, mkProd(n,a',b')
-    | LetIn(n,a,ty,b) ->
-        let (s, a') = compact_constr s a k in
-        let (s, ty') = compact_constr s ty k in
-        let (s, b') = compact_constr s b (k+1) in
-        if a==a' && ty==ty' && b==b' then s, c else s, mkLetIn(n,a',ty',b')
-    | Fix(fi,(na,ty,bd)) ->
-        let (s, ty') = compact_vect s ty k in
-        let (s, bd') = compact_vect s bd (k+Array.length ty) in
-        if ty==ty' && bd==bd' then s, c else s, mkFix(fi,(na,ty',bd'))
-    | CoFix(i,(na,ty,bd)) ->
-        let (s, ty') = compact_vect s ty k in
-        let (s, bd') = compact_vect s bd (k+Array.length ty) in
-        if ty==ty' && bd==bd' then s, c else s, mkCoFix(i,(na,ty',bd'))
-    | Case(ci,p,a,br) ->
-        let (s, p') = compact_constr s p k in
-        let (s, a') = compact_constr s a k in
-        let (s, br') = compact_vect s br k in
-        if p==p' && a==a' && br==br' then s, c else s, mkCase(ci,p',a',br')
-
-and compact_vect s v k =
-  let fold s c = compact_constr s c k in
-  Array.smartfoldmap fold s v
-
-(* Computes the minimal environment of a closure.
-   Idea: if the subs is not identity, the term will have to be
-   reallocated entirely (to propagate the substitution). So,
-   computing the set of free variables does not change the
-   complexity. *)
-let optimise_closure env c =
-  if is_subs_id env then (env,c) else
-    let ((_,s), c') = compact_constr (0,[]) c 1 in
-    let env' = Array.map_of_list (fun i -> clos_rel env i) s in
-    (subs_cons (env', subs_id 0),c')
-
 let mk_lambda env t =
-  let (env,t) = optimise_closure env t in
   let (rvars,t') = decompose_lam t in
   FLambda(List.length rvars, List.rev rvars, t', env)
 
@@ -596,8 +538,7 @@ let mk_clos_deep clos_fun env t =
 	  term = FProj (p, clos_fun env c) }
     | Case (ci,p,c,v) ->
         { norm = Red;
-	  term = FCases (ci, clos_fun env p, clos_fun env c,
-			 CArray.Fun1.map clos_fun env v) }
+	  term = FCaseT (ci, p, clos_fun env c, v, env) }
     | Fix fx ->
         { norm = Cstr; term = FFix (fx, env) }
     | CoFix cfx ->
@@ -628,10 +569,14 @@ let rec to_constr constr_fun lfts v =
     | FFlex (ConstKey op) -> mkConstU op
     | FInd op -> mkIndU op
     | FConstruct op -> mkConstructU op
-    | FCases (ci,p,c,ve) ->
+    | FCase (ci,p,c,ve) ->
 	mkCase (ci, constr_fun lfts p,
                 constr_fun lfts c,
 		CArray.Fun1.map constr_fun lfts ve)
+    | FCaseT (ci,p,c,ve,env) ->
+	mkCase (ci, constr_fun lfts (mk_clos env p),
+                constr_fun lfts c,
+		Array.map (fun b -> constr_fun lfts (mk_clos env b)) ve)
     | FFix ((op,(lna,tys,bds)),e) ->
         let n = Array.length bds in
         let ftys = CArray.Fun1.map mk_clos e tys in
@@ -697,35 +642,24 @@ let rec fstrong unfreeze_fun lfts v =
   to_constr (fstrong unfreeze_fun) lfts (unfreeze_fun v)
 *)
 
-let rec zip m stk rem = match stk with
-| [] ->
-  begin match rem with
-  | [] -> m
-  | stk :: rem -> zip m stk rem
-  end
-| Zapp args :: s -> zip {norm=neutr m.norm; term=FApp(m, args)} s rem
-| Zcase(ci,p,br)::s ->
-  let t = FCases(ci, p, m, br) in
-  zip {norm=neutr m.norm; term=t} s rem
-| Zproj (i,j,cst) :: s -> 
-  zip {norm=neutr m.norm; term=FProj (cst,m)} s rem
-| Zfix(fx,par)::s ->
-  zip fx par ((Zapp [|m|] :: s) :: rem)
-| Zshift(n)::s ->
-  zip (lift_fconstr n m) s rem
-| Zupdate(rf)::s ->
-  zip_update m s rem rf
-
-and zip_update m stk rem rf = match stk with
-| [] ->
-  begin match rem with
-  | [] -> update rf m.norm m.term
-  | stk :: rem -> zip_update m stk rem rf
-  end
-| Zupdate rf :: s -> zip_update m s rem rf
-| s -> zip (update rf m.norm m.term) s rem
-
-let zip m stk = zip m stk []
+let rec zip m stk =
+  match stk with
+    | [] -> m
+    | Zapp args :: s -> zip {norm=neutr m.norm; term=FApp(m, args)} s
+    | Zcase(ci,p,br)::s ->
+        let t = FCase(ci, p, m, br) in
+        zip {norm=neutr m.norm; term=t} s
+    | ZcaseT(ci,p,br,e)::s ->
+        let t = FCaseT(ci, p, m, br, e) in
+        zip {norm=neutr m.norm; term=t} s
+    | Zproj (i,j,cst) :: s -> 
+        zip {norm=neutr m.norm; term=FProj(Projection.make cst true,m)} s
+    | Zfix(fx,par)::s ->
+        zip fx (par @ append_stack [|m|] s)
+    | Zshift(n)::s ->
+        zip (lift_fconstr n m) s
+    | Zupdate(rf)::s ->
+        zip (update rf m.norm m.term) s
 
 let fapp_stack (m,stk) = zip m stk
 
@@ -797,7 +731,8 @@ let rec get_args n tys f e stk =
 
 (* Eta expansion: add a reference to implicit surrounding lambda at end of stack *)
 let rec eta_expand_stack = function
-  | (Zapp _ | Zfix _ | Zcase _ | Zshift _ | Zupdate _ | Zproj _ as e) :: s ->
+  | (Zapp _ | Zfix _ | Zcase _ | ZcaseT _ | Zproj _ 
+	| Zshift _ | Zupdate _ as e) :: s ->
       e :: eta_expand_stack s
   | [] ->
       [Zshift 1; Zapp [|{norm=Norm; term= FRel 1}|]]
@@ -854,7 +789,7 @@ let rec get_parameters depth n argstk =
 	(* strip_update_shift_app only produces Zapp and Zshift items *)
 
 
-(** [eta_expand_ind_stacks env ind c s t] computes stacks correspoding 
+(** [eta_expand_ind_stack env ind c s t] computes stacks correspoding 
     to the conversion of the eta expansion of t, considered as an inhabitant 
     of ind, and the Constructor c of this inductive type applied to arguments
     s.
@@ -863,26 +798,22 @@ let rec get_parameters depth n argstk =
     @raises Not_found if the inductive is not a primitive record, or if the 
     constructor is partially applied.
  *)
-let eta_expand_ind_stacks env ind m s (f, s') =
+let eta_expand_ind_stack env ind m s (f, s') =
   let mib = lookup_mind (fst ind) env in
     match mib.Declarations.mind_record with
-    | Some (exp,projs) when Array.length projs > 0 -> 
-      let primitive = Environ.is_projection projs.(0) env in
-	if primitive then
-	  (* Construct, pars1 .. parsm :: arg1...argn :: s ~= (f, s') ->
-	     arg1..argn ~= (proj1 t...projn t) && s = s' <->
-	     arg1..argn @ s ~= (proj1 t...projn t) @ s' *)
-	  let pars = mib.Declarations.mind_nparams in
-	  let (depth', args', s') = strip_update_shift_app_red f s' in
-	  let right = fapp_stack (f, args') in
-	  let (depth, args, s) = strip_update_shift_app m s in
-	  (** Try to drop the params, might fail on partially applied constructors. *)
-	  let argss = try_drop_parameters depth pars args in
-	  let hstack = Array.map (fun p -> { norm = Red; (* right can't be a constructor though *)
-					     term = FProj (p, right) }) projs in
-	    argss, (Zapp hstack :: s')
-	else raise Not_found (* disallow eta-exp for non-primitive records *)
-    | _ -> raise Not_found
+    | Some (Some (_,projs,pbs)) when
+	mib.Declarations.mind_finite <> Decl_kinds.CoFinite -> 
+	(* (Construct, pars1 .. parsm :: arg1...argn :: []) ~= (f, s') ->
+	   arg1..argn ~= (proj1 t...projn t) where t = zip (f,s') *)
+      let pars = mib.Declarations.mind_nparams in
+      let right = fapp_stack (f, s') in
+      let (depth, args, s) = strip_update_shift_app m s in
+      (** Try to drop the params, might fail on partially applied constructors. *)
+      let argss = try_drop_parameters depth pars args in
+      let hstack = Array.map (fun p -> { norm = Red; (* right can't be a constructor though *)
+					 term = FProj (Projection.make p true, right) }) projs in
+	argss, [Zapp hstack]	
+    | _ -> raise Not_found (* disallow eta-exp for non-primitive records *)
 
 let rec project_nth_arg n argstk =
   match argstk with
@@ -929,18 +860,21 @@ let rec knh info m stk =
     | FCLOS(t,e) -> knht info e t (zupdate m stk)
     | FLOCKED -> assert false
     | FApp(a,b) -> knh info a (append_stack b (zupdate m stk))
-    | FCases(ci,p,t,br) -> knh info t (Zcase(ci,p,br)::zupdate m stk)
+    | FCase(ci,p,t,br) -> knh info t (Zcase(ci,p,br)::zupdate m stk)
+    | FCaseT(ci,p,t,br,e) -> knh info t (ZcaseT(ci,p,br,e)::zupdate m stk)
     | FFix(((ri,n),(_,_,_)),_) ->
         (match get_nth_arg m ri.(n) stk with
              (Some(pars,arg),stk') -> knh info arg (Zfix(m,pars)::stk')
            | (None, stk') -> (m,stk'))
     | FCast(t,_,_) -> knh info t stk
     | FProj (p,c) ->
-        if red_set info.i_flags (fCONST p) then
+      let unf = Projection.unfolded p in
+        if unf || red_set info.i_flags (fCONST (Projection.constant p)) then
           (match try Some (lookup_projection p (info_env info)) with Not_found -> None with
 	  | None -> (m, stk)
 	  | Some pb ->
-	     knh info c (Zproj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, p)
+	     knh info c (Zproj (pb.Declarations.proj_npars, pb.Declarations.proj_arg, 
+				Projection.constant p)
 			 :: zupdate m stk))
 	else (m,stk)
 
@@ -955,7 +889,7 @@ and knht info e t stk =
     | App(a,b) ->
         knht info e a (append_stack (mk_clos_vect e b) stk)
     | Case(ci,p,t,br) ->
-        knht info e t (Zcase(ci, mk_clos e p, mk_clos_vect e br)::stk)
+        knht info e t (ZcaseT(ci, p, br, e)::stk)
     | Fix _ -> knh info (mk_clos2 e t) stk
     | Cast(a,_,_) -> knht info e a stk
     | Rel n -> knh info (clos_rel e n) stk
@@ -992,6 +926,10 @@ let rec knr info m stk =
             assert (ci.ci_npar>=0);
             let rargs = drop_parameters depth ci.ci_npar args in
             kni info br.(c-1) (rargs@s)
+        | (depth, args, ZcaseT(ci,_,br,e)::s) ->
+            assert (ci.ci_npar>=0);
+            let rargs = drop_parameters depth ci.ci_npar args in
+            knit info e br.(c-1) (rargs@s)
         | (_, cargs, Zfix(fx,par)::s) ->
             let rarg = fapp_stack(m,cargs) in
             let stk' = par @ append_stack [|rarg|] s in
@@ -1004,7 +942,7 @@ let rec knr info m stk =
         | (_,args,s) -> (m,args@s))
   | FCoFix _ when red_set info.i_flags fIOTA ->
       (match strip_update_shift_app m stk with
-          (_, args, ((Zcase _::_) as stk')) ->
+          (_, args, (((Zcase _|ZcaseT _)::_) as stk')) ->
             let (fxe,fxbd) = contract_fix_vect m.term in
             knit info fxe fxbd (args@stk')
         | (_,args,s) -> (m,args@s))
@@ -1036,8 +974,12 @@ let rec zip_term zfun m stk =
     | Zcase(ci,p,br)::s ->
         let t = mkCase(ci, zfun p, m, Array.map zfun br) in
         zip_term zfun t s
+    | ZcaseT(ci,p,br,e)::s ->
+        let t = mkCase(ci, zfun (mk_clos e p), m,
+		       Array.map (fun b -> zfun (mk_clos e b)) br) in
+        zip_term zfun t s
     | Zproj(_,_,p)::s -> 
-        let t = mkProj (p, m) in 
+        let t = mkProj (Projection.make p true, m) in 
 	zip_term zfun t s
     | Zfix(fx,par)::s ->
         let h = mkApp(zip_term zfun (zfun fx) par,[|m|]) in
@@ -1114,6 +1056,8 @@ type clos_infos = fconstr infos
 let create_clos_infos ?(evars=fun _ -> None) flgs env =
   create (fun _ -> inject) flgs env evars
 let oracle_of_infos infos = Environ.oracle infos.i_cache.i_env
+
+let env_of_infos infos = infos.i_cache.i_env
 
 let infos_with_reds infos reds = 
   { infos with i_flags = reds }

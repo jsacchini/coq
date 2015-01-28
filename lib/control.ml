@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -14,7 +14,7 @@ let steps = ref 0
 
 let are_we_threading = lazy (
   match !Flags.async_proofs_mode with
-  | Flags.APonParallel _ -> true
+  | Flags.APon -> true
   | _ -> false)
 
 let check_for_interrupt () =
@@ -41,7 +41,7 @@ let unix_timeout n f e =
   with e ->
     let e = Backtrace.add_backtrace e in
     restore_timeout ();
-    raise e
+    Exninfo.iraise e
 
 let windows_timeout n f e =
   let killed = ref false in
@@ -78,7 +78,7 @@ let windows_timeout n f e =
   | e ->
     let () = killed := true in
     let e = Backtrace.add_backtrace e in
-    raise e
+    Exninfo.iraise e
 
 type timeout = { timeout : 'a. int -> (unit -> 'a) -> exn -> 'a }
 

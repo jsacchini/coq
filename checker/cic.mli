@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -53,7 +53,8 @@ type metavariable = int
 type case_style = LetStyle | IfStyle | LetPatternStyle | MatchStyle
   | RegularStyle (** infer printing form from number of constructor *)
 type case_printing =
-  { ind_nargs : int; (** length of the arity of the inductive type *)
+  { ind_tags : bool list; (* tell whether letin or lambda in the arity of the inductive type *)
+    cstr_tags : bool list array; (* whether each pattern var of each constructor is a let-in (true) or not (false) *)
     style     : case_style }
 
 (** the integer is the number of real args, needed for reduction *)
@@ -170,7 +171,7 @@ type engagement = ImpredicativeSet
 
 
 type template_arity = {
-  template_param_levels : Univ.universe option list;
+  template_param_levels : Univ.universe_level option list;
   template_level : Univ.universe;
 }
 
@@ -196,6 +197,7 @@ type projection_body = {
   proj_npars : int;
   proj_arg : int;
   proj_type : constr; (* Type under params *)
+  proj_eta : constr * constr; (* Eta-expanded term and type *)
   proj_body : constr; (* For compatibility, the match version *)
 }
 
@@ -211,8 +213,6 @@ type constant_body = {
     const_body : constant_def;
     const_type : constant_type;
     const_body_code : to_patch_substituted;
-    const_constraints : Univ.constraints;
-    const_native_name : native_name ref;
     const_polymorphic : bool; (** Is it polymorphic or not *)
     const_universes : constant_universes;
     const_proj : projection_body option;
@@ -227,10 +227,19 @@ type recarg =
 
 type wf_paths = recarg Rtree.t
 
+type record_body = (Id.t * constant array * projection_body array) option
+    (* The body is empty for non-primitive records, otherwise we get its
+       binder name in projections and list of projections if it is primitive. *)
+
 type regular_inductive_arity = {
   mind_user_arity : constr;
   mind_sort : sorts;
 }
+
+type recursivity_kind =
+  | Finite (** = inductive *)
+  | CoFinite (** = coinductive *)
+  | BiFinite (** = non-recursive, like in "Record" definitions *)
 
 type inductive_arity = (regular_inductive_arity, template_arity) declaration_arity
 
@@ -254,18 +263,18 @@ type one_inductive_body = {
 
     mind_nrealargs : int; (** Number of expected real arguments of the type (no let, no params) *)
 
-    mind_nrealargs_ctxt : int; (** Length of realargs context (with let, no params) *)
+    mind_nrealdecls : int; (** Length of realargs context (with let, no params) *)
 
     mind_kelim : sorts_family list; (** List of allowed elimination sorts *)
 
     mind_nf_lc : constr array; (** Head normalized constructor types so that their conclusion is atomic *)
 
-    mind_consnrealdecls : int array;
- (** Length of the signature of the constructors (with let, w/o params)
-    (not used in the kernel) *)
-
     mind_consnrealargs : int array;
  (** Length of the signature of the constructors (w/o let, w/o params)
+    (not used in the kernel) *)
+
+    mind_consnrealdecls : int array;
+ (** Length of the signature of the constructors (with let, w/o params)
     (not used in the kernel) *)
 
     mind_recargs : wf_paths; (** Signature of recursive arguments in the constructors *)
@@ -283,11 +292,9 @@ type mutual_inductive_body = {
 
     mind_packets : one_inductive_body array;  (** The component of the mutual inductive block *)
 
-    mind_record : (constr * constant array) option;  
-    (** Whether the inductive type has been declared as a record, 
-	In that case we get its canonical eta-expansion and list of projections. *)
+    mind_record : record_body option; (** Whether the inductive type has been declared as a record. *)
 
-    mind_finite : bool;  (** Whether the type is inductive or coinductive *)
+    mind_finite : recursivity_kind;  (** Whether the type is inductive or coinductive *)
 
     mind_ntypes : int;  (** Number of types in the block *)
 
@@ -358,7 +365,7 @@ and module_signature = (module_type_body,structure_body) functorize
 and module_expression = (module_type_body,module_alg_expr) functorize
 
 and module_implementation =
-  | Abstract (** no accessible implementation *)
+  | Abstract (** no accessible implementation (keep this constructor first!) *)
   | Algebraic of module_expression (** non-interactive algebraic expression *)
   | Struct of module_signature (** interactive body *)
   | FullStruct (** special case of [Struct] : the body is exactly [mod_type] *)
@@ -375,18 +382,11 @@ and module_body =
     mod_delta : delta_resolver;
     mod_retroknowledge : action list }
 
-(** A [module_type_body] is similar to a [module_body], with
-    no implementation and retroknowledge fields *)
+(** A [module_type_body] is just a [module_body] with no
+    implementation ([mod_expr] always [Abstract]) and also
+    an empty [mod_retroknowledge] *)
 
-and module_type_body =
-  { typ_mp : module_path; (** path of the module type *)
-    typ_expr : module_signature; (** expanded type *)
-    (** algebraic expression, kept if it's relevant for extraction  *)
-    typ_expr_alg : module_expression option;
-    typ_constraints : Univ.constraints;
-    (** quotiented set of equivalent constants and inductive names *)
-    typ_delta : delta_resolver}
-
+and module_type_body = module_body
 
 (*************************************************************************)
 (** {4 From safe_typing.ml} *)
@@ -397,7 +397,7 @@ type compilation_unit_name = DirPath.t
 
 type vodigest =
   | Dvo of Digest.t              (* The digest of the seg_lib part *)
-  | Dvivo of Digest.t * Digest.t (* The digest of the seg_lib + seg_univ part *)
+  | Dviovo of Digest.t * Digest.t (* The digest of the seg_lib+seg_univ part *)
 
 type library_info = compilation_unit_name * vodigest
 
@@ -426,7 +426,7 @@ type library_disk = {
 
 type opaque_table = constr Future.computation array
 type univ_table =
-  (Univ.constraints Future.computation array * Univ.constraints * bool) option
+  (Univ.universe_context_set Future.computation array * Univ.universe_context_set * bool) option
 
 (** A .vo file is currently made of :
 

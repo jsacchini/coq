@@ -1,12 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* File initially created by Gérard Huet and Thierry Coquand in 1984 *)
+(* File initially created by GÃ©rard Huet and Thierry Coquand in 1984 *)
 (* Extension to inductive constructions by Christine Paulin for Coq V5.6 *)
 (* Extension to mutual inductive constructions by Christine Paulin for
    Coq V5.10.2 *)
@@ -15,7 +15,7 @@
 (* Optimization of lifting functions by Bruno Barras, Mar 1997 *)
 (* Hash-consing by Bruno Barras in Feb 1998 *)
 (* Restructuration of Coq of the type-checking kernel by Jean-Christophe 
-   Filliâtre, 1999 *)
+   FilliÃ¢tre, 1999 *)
 (* Abstraction of the syntax of terms and iterators by Hugo Herbelin, 2000 *)
 (* Cleaning and lightening of the kernel by Bruno Barras, Nov 2001 *)
 
@@ -38,7 +38,8 @@ type cast_kind = VMcast | NATIVEcast | DEFAULTcast | REVERTcast
 (* This defines Cases annotations *)
 type case_style = LetStyle | IfStyle | LetPatternStyle | MatchStyle | RegularStyle
 type case_printing =
-  { ind_nargs : int; (* length of the arity of the inductive type *)
+  { ind_tags : bool list; (** tell whether letin or lambda in the arity of the inductive type *)
+    cstr_tags : bool list array; (* whether each pattern var of each constructor is a let-in (true) or not (false) *)
     style     : case_style }
 type case_info =
   { ci_ind        : inductive;
@@ -85,7 +86,7 @@ type ('constr, 'types) kind_of_term =
   | Case      of case_info * 'constr * 'constr * 'constr array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
-  | Proj      of constant * 'constr
+  | Proj      of projection * 'constr
 (* constr is the fixpoint of the previous type. Requires option
    -rectypes of the Caml compiler to be set *)
 type t = (t,t) kind_of_term
@@ -486,7 +487,7 @@ let compare_head_gen eq_universes eq_sorts f t1 t2 =
     Int.equal (Array.length l1) (Array.length l2) &&
       f c1 c2 && Array.equal f l1 l2
   | Evar (e1,l1), Evar (e2,l2) -> Evar.equal e1 e2 && Array.equal f l1 l2
-  | Proj (p1,c1), Proj (p2,c2) -> eq_constant p1 p2 && f c1 c2
+  | Proj (p1,c1), Proj (p2,c2) -> Projection.equal p1 p2 && f c1 c2
   | Const (c1,u1), Const (c2,u2) -> eq_constant c1 c2 && eq_universes true u1 u2
   | Ind (c1,u1), Ind (c2,u2) -> eq_ind c1 c2 && eq_universes false u1 u2
   | Construct (c1,u1), Construct (c2,u2) -> eq_constructor c1 c2 && eq_universes false u1 u2
@@ -523,7 +524,7 @@ let compare_head_gen_leq eq_universes eq_sorts leq_sorts eq leq t1 t2 =
   | App (c1,l1), App (c2,l2) ->
     Int.equal (Array.length l1) (Array.length l2) &&
       eq c1 c2 && Array.equal eq l1 l2
-  | Proj (p1,c1), Proj (p2,c2) -> eq_constant p1 p2 && eq c1 c2
+  | Proj (p1,c1), Proj (p2,c2) -> Projection.equal p1 p2 && eq c1 c2
   | Evar (e1,l1), Evar (e2,l2) -> Evar.equal e1 e2 && Array.equal eq l1 l2
   | Const (c1,u1), Const (c2,u2) -> eq_constant c1 c2 && eq_universes true u1 u2
   | Ind (c1,u1), Ind (c2,u2) -> eq_ind c1 c2 && eq_universes false u1 u2
@@ -657,7 +658,7 @@ let constr_ord_int f t1 t2 =
     | App (Cast(c1,_,_),l1), _ -> f (mkApp (c1,l1)) t2
     | _, App (Cast(c2, _,_),l2) -> f t1 (mkApp (c2,l2))
     | App (c1,l1), App (c2,l2) -> (f =? (Array.compare f)) c1 c2 l1 l2
-    | Proj (p1,c1), Proj (p2,c2) -> (con_ord =? f) p1 p2 c1 c2
+    | Proj (p1,c1), Proj (p2,c2) -> (Projection.compare =? f) p1 p2 c1 c2
     | Evar (e1,l1), Evar (e2,l2) ->
         (Evar.compare =? (Array.compare f)) e1 e2 l1 l2
     | Const (c1,u1), Const (c2,u2) -> con_ord c1 c2
@@ -741,9 +742,9 @@ let hasheq t1 t2 =
     | Evar (e1,l1), Evar (e2,l2) -> Evar.equal e1 e2 && array_eqeq l1 l2
     | Const (c1,u1), Const (c2,u2) -> c1 == c2 && u1 == u2
     | Ind ((sp1,i1),u1), Ind ((sp2,i2),u2) -> 
-      sp1 == sp2 && Int.equal i1 i2 && Univ.Instance.eqeq u1 u2
+      sp1 == sp2 && Int.equal i1 i2 && u1 == u2
     | Construct (((sp1,i1),j1),u1), Construct (((sp2,i2),j2),u2) ->
-      sp1 == sp2 && Int.equal i1 i2 && Int.equal j1 j2 && Univ.Instance.eqeq u1 u2
+      sp1 == sp2 && Int.equal i1 i2 && Int.equal j1 j2 && u1 == u2
     | Case (ci1,p1,c1,bl1), Case (ci2,p2,c2,bl2) ->
       ci1 == ci2 && p1 == p2 && c1 == c2 && array_eqeq bl1 bl2
     | Fix ((ln1, i1),(lna1,tl1,bl1)), Fix ((ln2, i2),(lna2,tl2,bl2)) ->
@@ -820,8 +821,8 @@ let hashcons (sh_sort,sh_ci,sh_construct,sh_ind,sh_con,sh_na,sh_id) =
 	(Evar (e,l), combinesmall 8 (combine (Evar.hash e) hl))
       | Proj (p,c) ->
         let c, hc = sh_rec c in
-	let p' = sh_con p in
-	  (Proj (p', c), combinesmall 17 (combine (Constant.hash p') hc))
+	let p' = Projection.hcons p in
+	  (Proj (p', c), combinesmall 17 (combine (Projection.hash p') hc))
       | Const (c,u) ->
 	let c' = sh_con c in
 	let u', hu = sh_instance u in
@@ -906,7 +907,7 @@ let rec hash t =
     | App (c,l) ->
       combinesmall 7 (combine (hash_term_array l) (hash c))
     | Proj (p,c) ->
-      combinesmall 17 (combine (Constant.hash p) (hash c))
+      combinesmall 17 (combine (Projection.hash p) (hash c))
     | Evar (e,l) ->
       combinesmall 8 (combine (Evar.hash e) (hash_term_array l))
     | Const (c,u) ->
@@ -933,7 +934,8 @@ struct
   type u = inductive -> inductive
   let hashcons hind ci = { ci with ci_ind = hind ci.ci_ind }
   let pp_info_equal info1 info2 =
-    Int.equal info1.ind_nargs info2.ind_nargs &&
+    List.equal (==) info1.ind_tags info2.ind_tags &&
+    Array.equal (List.equal (==)) info1.cstr_tags info2.cstr_tags &&
     info1.style == info2.style
   let equal ci ci' =
     ci.ci_ind == ci'.ci_ind &&
@@ -942,15 +944,18 @@ struct
     Array.equal Int.equal ci.ci_cstr_nargs ci'.ci_cstr_nargs && (* we use [Array.equal] on purpose *)
     pp_info_equal ci.ci_pp_info ci'.ci_pp_info  (* we use (=) on purpose *)
   open Hashset.Combine
+  let hash_bool b = if b then 0 else 1
+  let hash_bool_list = List.fold_left (fun n b -> combine n (hash_bool b))
   let hash_pp_info info =
-    let h = match info.style with
+    let h1 = match info.style with
     | LetStyle -> 0
     | IfStyle -> 1
     | LetPatternStyle -> 2
     | MatchStyle -> 3
-    | RegularStyle -> 4
-    in
-    combine info.ind_nargs h
+    | RegularStyle -> 4 in
+    let h2 = hash_bool_list 0 info.ind_tags in
+    let h3 = Array.fold_left hash_bool_list 0 info.cstr_tags in
+    combine3 h1 h2 h3
   let hash ci =
     let h1 = ind_hash ci.ci_ind in
     let h2 = Int.hash ci.ci_npar in
@@ -986,7 +991,7 @@ module Hsorts =
     end)
 
 (* let hcons_sorts = Hashcons.simple_hcons Hsorts.generate hcons_univ *)
-let hcons_caseinfo = Hashcons.simple_hcons Hcaseinfo.generate hcons_ind
+let hcons_caseinfo = Hashcons.simple_hcons Hcaseinfo.generate Hcaseinfo.hcons hcons_ind
 
 let hcons =
   hashcons

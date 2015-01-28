@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -82,10 +82,10 @@ open Unification
 
 let dft = default_unify_flags
 
-let res_pf ?(with_evars=false) ?(flags=dft ()) clenv =
-  Proofview.Goal.raw_enter begin fun gl ->
+let res_pf ?(with_evars=false) ?(with_classes=true) ?(flags=dft ()) clenv =
+  Proofview.Goal.enter begin fun gl ->
     let clenv gl = clenv_unique_resolver ~flags clenv gl in
-    clenv_refine with_evars (Tacmach.New.of_old clenv (Proofview.Goal.assume gl))
+    clenv_refine with_evars ~with_classes (Tacmach.New.of_old clenv (Proofview.Goal.assume gl))
   end
 
 (* [unifyTerms] et [unify] ne semble pas gérer les Meta, en
@@ -93,32 +93,38 @@ let res_pf ?(with_evars=false) ?(flags=dft ()) clenv =
    d'une même Meta sont compatibles. D'ailleurs le "fst" jette les metas
    provenant de w_Unify. (Utilisé seulement dans prolog.ml) *)
 
-let fail_quick_unif_flags = {
+let fail_quick_core_unif_flags = {
   modulo_conv_on_closed_terms = Some full_transparent_state;
   use_metas_eagerly_in_conv_on_closed_terms = false;
+  use_evars_eagerly_in_conv_on_closed_terms = false;
   modulo_delta = empty_transparent_state;
   modulo_delta_types = full_transparent_state;
-  modulo_delta_in_merge = None;
   check_applied_meta_types = false;
-  resolve_evars = false;
   use_pattern_unification = false;
   use_meta_bound_pattern_unification = true; (* ? *)
   frozen_evars = Evar.Set.empty;
   restrict_conv_on_strict_subterms = false; (* ? *)
   modulo_betaiota = false;
   modulo_eta = true;
-  allow_K_in_toplevel_higher_order_unification = false
+}
+
+let fail_quick_unif_flags = {
+  core_unify_flags = fail_quick_core_unif_flags;
+  merge_unify_flags = fail_quick_core_unif_flags;
+  subterm_unify_flags = fail_quick_core_unif_flags;
+  allow_K_in_toplevel_higher_order_unification = false;
+  resolve_evars = false
 }
 
 (* let unifyTerms m n = walking (fun wc -> fst (w_Unify CONV m n [] wc)) *)
 let unify ?(flags=fail_quick_unif_flags) m =
-  Proofview.Goal.raw_enter begin fun gl ->
+  Proofview.Goal.enter begin fun gl ->
     let env = Tacmach.New.pf_env gl in
     let n = Tacmach.New.pf_nf_concl gl in
     let evd = create_goal_evar_defs (Proofview.Goal.sigma gl) in
     try
       let evd' = w_unify env evd CONV ~flags m n in
-      Proofview.V82.tclEVARS evd'
+	Proofview.Unsafe.tclEVARSADVANCE evd'
     with e when Errors.noncritical e ->
       (** This is Tacticals.tclFAIL *)
       Proofview.tclZERO (FailError (0, lazy (Errors.print e)))

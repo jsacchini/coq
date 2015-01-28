@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -943,9 +943,8 @@ Lemma StepFun_P21 :
   forall (a b:R) (f:R -> R) (l:Rlist),
     is_subdivision f a b l -> adapted_couple f a b l (FF l f).
 Proof.
-  intros; unfold adapted_couple; unfold is_subdivision in X;
-    unfold adapted_couple in X; elim X; clear X; intros;
-      decompose [and] p; clear p; repeat split; try assumption.
+  intros * (x & H & H1 & H0 & H2 & H4).
+  repeat split; try assumption.
   apply StepFun_P20; rewrite H2; apply lt_O_Sn.
   intros; assert (H5 := H4 _ H3); unfold constant_D_eq, open_interval in H5;
     unfold constant_D_eq, open_interval; intros;

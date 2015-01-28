@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -126,7 +126,6 @@ let define internal id c p univs =
     const_entry_body = Future.from_val ((c,Univ.ContextSet.empty), Declareops.no_seff);
     const_entry_secctx = None;
     const_entry_type = None;
-    const_entry_proj = false;
     const_entry_polymorphic = p;
     const_entry_universes = Evd.evar_context_universe_context ctx;
     const_entry_opaque = false;

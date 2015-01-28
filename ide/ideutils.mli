@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -28,8 +28,6 @@ val do_convert : string -> string
 val find_tag_limits : GText.tag -> GText.iter -> GText.iter * GText.iter
 val find_tag_start : GText.tag -> GText.iter -> GText.iter
 val find_tag_stop : GText.tag -> GText.iter -> GText.iter
-
-val print_id : 'a -> unit
 
 val select_file_for_open : title:string -> unit -> string option
 val select_file_for_save :

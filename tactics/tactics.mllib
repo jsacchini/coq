@@ -1,3 +1,4 @@
+Ftactic
 Geninterp
 Dnet
 Dn
@@ -9,16 +10,17 @@ Eqschemes
 Elimschemes
 Tactics
 Elim
-Auto
 Equality
 Contradiction
 Inv
 Leminv
 Tacsubst
 Taccoerce
-Tacintern
 Tacenv
-TacticMatching
+Hints
+Auto
+Tacintern
+Tactic_matching
 Tacinterp
 Evar_tactics
 Term_dnet

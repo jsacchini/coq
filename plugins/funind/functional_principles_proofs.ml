@@ -74,9 +74,10 @@ let do_observe_tac s tac g =
     ignore(Stack.pop debug_queue);
     v
   with reraise ->
+    let reraise = Errors.push reraise in
     if not (Stack.is_empty debug_queue)
-    then print_debug_queue true (Cerrors.process_vernac_interp_error reraise);
-    raise reraise
+    then print_debug_queue true (fst (Cerrors.process_vernac_interp_error reraise));
+    iraise reraise
 
 let observe_tac_stream s tac g =
   if do_observe ()
@@ -180,7 +181,7 @@ let change_hyp_with_using msg hyp_id t tac : tactic =
       [tclTHENLIST
       [
 	(* observe_tac "change_hyp_with_using thin" *) (thin [hyp_id]);
-	(* observe_tac "change_hyp_with_using rename " *) (rename_hyp [prov_id,hyp_id])
+	(* observe_tac "change_hyp_with_using rename " *) (Proofview.V82.of_tactic (rename_hyp [prov_id,hyp_id]))
       ]] g
 
 exception TOREMOVE
@@ -448,7 +449,7 @@ let clean_hyp_with_heq ptes_infos eq_hyps hyp_id env sigma =
 		     in
 (* 		     observe_tac "rec hyp " *)
 		       (tclTHENS
-		       (Proofview.V82.of_tactic (assert_tac (Name rec_pte_id) t_x))
+		       (Proofview.V82.of_tactic (assert_before (Name rec_pte_id) t_x))
 		       [
 			 (* observe_tac "prove rec hyp" *) (prove_rec_hyp eq_hyps);
 (* 			observe_tac "prove rec hyp" *)
@@ -589,7 +590,7 @@ let treat_new_case ptes_infos nb_prod continue_tac term dyn_infos =
 	Proofview.V82.of_tactic (intro_using heq_id);
 	onLastHypId (fun heq_id -> tclTHENLIST [
 	(* Then the new hypothesis *)
-	tclMAP introduction_no_check dyn_infos.rec_hyps;
+	tclMAP (fun id -> Proofview.V82.of_tactic (introduction ~check:false id)) dyn_infos.rec_hyps;
 	observe_tac "after_introduction" (fun g' ->
 	   (* We get infos on the equations introduced*)
 	   let new_term_value_eq = pf_type_of g' (mkVar heq_id) in
@@ -599,7 +600,7 @@ let treat_new_case ptes_infos nb_prod continue_tac term dyn_infos =
 	       | App(f,[| _;_;args2 |]) -> args2
 	       | _ ->
 		   observe (str "cannot compute new term value : " ++ pr_gls g' ++ fnl () ++ str "last hyp is" ++
-			      pr_lconstr_env (pf_env g') new_term_value_eq
+			      pr_lconstr_env (pf_env g') Evd.empty new_term_value_eq
 			   );
 		   anomaly (Pp.str "cannot compute new term value")
 	   in
@@ -642,7 +643,7 @@ let instanciate_hyps_with_args (do_prove:Id.t list -> tactic) hyps args_id =
             Refiner.tclEVARS evm;
 	    Proofview.V82.of_tactic (pose_proof (Name prov_hid) c);
 	    thin [hid];
-	    rename_hyp [prov_hid,hid]
+	    Proofview.V82.of_tactic (rename_hyp [prov_hid,hid])
 	  ] g
       )
       ( (*
@@ -948,8 +949,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
 (*   observe (str "rec_args_num := " ++ str (string_of_int (rec_args_num + 1) )); *)
   let f_def = Global.lookup_constant (fst (destConst f)) in
   let eq_lhs = mkApp(f,Array.init (nb_params + nb_args) (fun i -> mkRel(nb_params + nb_args - i))) in
-  let f_body = Option.get (body_of_constant f_def)
-  in
+  let f_body = Option.get (Global.body_of_constant_body f_def)in
   let params,f_body_with_params = decompose_lam_n nb_params f_body in
   let (_,num),(_,_,bodies) = destFix f_body_with_params in
   let fnames_with_params =
@@ -976,7 +976,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
 	   let rec_id = pf_nth_hyp_id g 1 in
 	   tclTHENSEQ
 	     [(* observe_tac "generalize_non_dep in generate_equation_lemma" *) (generalize_non_dep rec_id);
-	      (* observe_tac "h_case" *) (Proofview.V82.of_tactic (general_case_analysis false (mkVar rec_id,NoBindings)));
+	      (* observe_tac "h_case" *) (Proofview.V82.of_tactic (simplest_case (mkVar rec_id)));
 	      (Proofview.V82.of_tactic intros_reflexivity)] g
 	)
       ]
@@ -987,7 +987,7 @@ let generate_equation_lemma fnames f fun_num nb_params nb_args rec_args_num =
       i*)
     (mk_equation_id f_id)
     (Decl_kinds.Global, false, (Decl_kinds.Proof Decl_kinds.Theorem))
-  Evd.empty_evar_universe_context
+  Evd.empty
   lemma_type
   (Lemmas.mk_hook (fun _ _ -> ()));
   ignore (Pfedit.by (Proofview.V82.tactic prove_replacement));
@@ -1065,7 +1065,7 @@ let prove_princ_for_struct interactive_proof fun_num fnames all_funs _nparams : 
       }
     in
     let get_body const =
-      match body_of_constant (Global.lookup_constant const) with
+      match Global.body_of_constant const with
 	| Some body ->
 	     Tacred.cbv_norm_flags
 	       (Closure.RedFlags.mkflags [Closure.RedFlags.fZETA])
@@ -1433,11 +1433,11 @@ let new_prove_with_tcc is_mes acc_inv hrec tcc_hyps eqs : tactic =
 	 backtrack_eqs_until_hrec hrec eqs;
 	 (* observe_tac ("new_prove_with_tcc ( applying "^(Id.to_string hrec)^" )" ) *)
 	 (tclTHENS  (* We must have exactly ONE subgoal !*)
-	    (apply (mkVar hrec))
+	    (Proofview.V82.of_tactic (apply (mkVar hrec)))
 	    [ tclTHENSEQ
 		[
-		  keep (tcc_hyps@eqs);
-		  apply (Lazy.force acc_inv);
+		  (Proofview.V82.of_tactic (keep (tcc_hyps@eqs)));
+		  (Proofview.V82.of_tactic (apply (Lazy.force acc_inv)));
 		  (fun g ->
 		     if is_mes
 		     then
@@ -1454,7 +1454,7 @@ let new_prove_with_tcc is_mes acc_inv hrec tcc_hyps eqs : tactic =
 				    Eauto.eauto_with_bases
 				      (true,5)
 				      [Evd.empty,Lazy.force refl_equal]
-				      [Auto.Hint_db.empty empty_transparent_state false]
+				      [Hints.Hint_db.empty empty_transparent_state false]
 				  )
 			   )
 			)
@@ -1556,7 +1556,7 @@ let prove_principle_for_gen
 	       (
 		 (* observe_tac  *)
 (* 		   "apply wf_thm"  *)
-		 Tactics.Simple.apply (mkApp(mkVar wf_thm_id,[|mkVar rec_arg_id|]))
+		 Proofview.V82.of_tactic (Tactics.Simple.apply (mkApp(mkVar wf_thm_id,[|mkVar rec_arg_id|])))
 	       )
 	    )
 	 )

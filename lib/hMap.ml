@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -327,6 +327,20 @@ struct
     let map f s =
       let fs m = Map.Unsafe.map f m in
       Int.Map.map fs s
+  end
+
+  module Monad(M : CMap.MonadS) =
+  struct
+    module IntM = Int.Map.Monad(M)
+    module ExtM = Map.Monad(M)
+    open M
+
+    let fold f s accu =
+      let ff _ m accu = ExtM.fold f m accu in
+      IntM.fold ff s accu
+
+    let fold_left _ _ _ = assert false
+    let fold_right _ _ _ = assert false
   end
 
 end

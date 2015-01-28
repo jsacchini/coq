@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2013     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -27,7 +27,7 @@ val mk_lazy : lambda -> lambda
 
 val get_mind_prefix : env -> mutual_inductive -> string
 
-val get_allias : env -> constant -> constant
+val get_allias : env -> pconstant -> pconstant
 
 val lambda_of_constr : env -> evars -> Constr.constr -> lambda
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -17,6 +17,7 @@ open Names
 open Reductionops
 open Environ
 open Termops
+open Arguments_renaming
 
 type retype_error =
   | NotASort
@@ -94,10 +95,10 @@ let retype ?(polyprop=true) sigma =
         let (_,_,ty) = lookup_rel n env in
         lift n ty
     | Var id -> type_of_var env id
-    | Const cst -> Typeops.type_of_constant_in env cst
+    | Const cst -> rename_type_of_constant env cst
     | Evar ev -> Evd.existential_type sigma ev
-    | Ind ind -> type_of_inductive env ind
-    | Construct cstr -> type_of_constructor env cstr
+    | Ind ind -> rename_type_of_inductive env ind
+    | Construct cstr -> rename_type_of_constructor env cstr
     | Case (_,p,c,lf) ->
         let Inductiveops.IndType(_,realargs) =
           let t = type_of env c in
@@ -126,8 +127,9 @@ let retype ?(polyprop=true) sigma =
           (subst_type env sigma (type_of env f) (Array.to_list args))
     | Proj (p,c) -> 
        let Inductiveops.IndType(pars,realargs) =
-         try Inductiveops.find_rectype env sigma (type_of env c)
-         with Not_found -> anomaly ~label:"type_of" (str "Bad recursive type") 
+	 let ty = type_of env c in
+           try Inductiveops.find_rectype env sigma ty
+           with Not_found -> retype_error BadRecursiveType
        in
        let (_,u), pars = dest_ind_family pars in
 	 substl (c :: List.rev pars) (Typeops.type_of_projection env (p,u))
@@ -240,3 +242,12 @@ let sorts_of_context env evc ctxt =
       let s = get_sort_of env evc t in
       (push_rel d env,s::sorts) in
   snd (aux ctxt)
+
+let expand_projection env sigma pr c args =
+  let ty = get_type_of ~lax:true env sigma c in
+  let (i,u), ind_args = 
+    try Inductiveops.find_mrectype env sigma ty 
+    with Not_found -> retype_error BadRecursiveType
+  in
+    mkApp (mkConstU (Projection.constant pr,u), 
+	   Array.of_list (ind_args @ (c :: args)))

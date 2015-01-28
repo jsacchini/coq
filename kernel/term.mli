@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -47,7 +47,7 @@ type case_style = Constr.case_style =
   LetStyle | IfStyle | LetPatternStyle | MatchStyle | RegularStyle
 
 type case_printing = Constr.case_printing =
-  { ind_nargs : int; style     : case_style }
+  { ind_tags : bool list; cstr_tags : bool list array; style : case_style }
 
 type case_info = Constr.case_info =
   { ci_ind        : inductive;
@@ -86,7 +86,7 @@ type ('constr, 'types) kind_of_term = ('constr, 'types) Constr.kind_of_term =
   | Case      of case_info * 'constr * 'constr * 'constr array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
-  | Proj      of constant * 'constr
+  | Proj      of projection * 'constr
 
 type values = Constr.values
 
@@ -112,6 +112,7 @@ val isConstruct : constr -> bool
 val isFix : constr -> bool
 val isCoFix : constr -> bool
 val isCase : constr -> bool
+val isProj : constr -> bool
 
 val is_Prop : constr -> bool
 val is_Set  : constr -> bool
@@ -182,6 +183,9 @@ return P in t1], or [if c then t1 else t2])
 @return [(info,c,fun args x => P,[|...|fun yij => ti| ...|])]
 where [info] is pretty-printing information *)
 val destCase : constr -> case_info * constr * constr * constr array
+
+(** Destructs a projection *)
+val destProj : constr -> projection * constr
 
 (** Destructs the {% $ %}i{% $ %}th function of the block
    [Fixpoint f{_ 1} ctx{_ 1} = b{_ 1}
@@ -405,7 +409,7 @@ val mkLambda : Name.t * types * constr -> constr
 val mkLetIn : Name.t * constr * types * constr -> constr
 val mkApp : constr * constr array -> constr
 val mkConst : constant -> constr
-val mkProj : (constant * constr) -> constr
+val mkProj : projection * constr -> constr
 val mkInd : inductive -> constr
 val mkConstruct : constructor -> constr
 val mkConstU : constant puniverses -> constr

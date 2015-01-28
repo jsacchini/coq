@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2013     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -101,21 +101,24 @@ let build_branches_type env (mind,_ as _ind) mib mip params dep p =
      a 0) et les lambda correspondant aux realargs *)
   let build_one_branch i cty =
     let typi = type_constructor mind mib cty params in
-    let decl,indapp = Term.decompose_prod typi in
+    let decl,indapp = Reductionops.splay_prod env Evd.empty typi in
+    let decl_with_letin,_ = decompose_prod_assum typi in
     let ind,cargs = find_rectype_a env indapp in
     let nparams = Array.length params in
     let carity = snd (rtbl.(i)) in
     let crealargs = Array.sub cargs nparams (Array.length cargs - nparams) in
-    let codom = 
-      let papp = mkApp(lift (List.length decl) p,crealargs) in
+    let codom =
+      let ndecl = List.length decl in
+      let papp = mkApp(lift ndecl p,crealargs) in
       if dep then
 	let cstr = ith_constructor_of_inductive (fst ind) (i+1) in
         let relargs = Array.init carity (fun i -> mkRel (carity-i)) in
+	let params = Array.map (lift ndecl) params in
 	let dep_cstr = mkApp(mkApp(mkConstructU (cstr,snd ind),params),relargs) in
 	mkApp(papp,[|dep_cstr|])
       else papp
     in 
-    decl, codom
+    decl, decl_with_letin, codom
   in Array.mapi build_one_branch mip.mind_nf_lc
 
 let build_case_type dep p realargs c = 
@@ -254,8 +257,8 @@ and nf_bargs env b t =
 and nf_atom env atom =
   match atom with
   | Arel i -> mkRel (nb_rel env - i)
-  | Aconstant cst -> mkConst cst
-  | Aind ind -> mkInd ind
+  | Aconstant cst -> mkConstU cst
+  | Aind ind -> mkIndU ind
   | Asort s -> mkSort s
   | Avar id -> mkVar id
   | Aprod(n,dom,codom) ->
@@ -268,7 +271,7 @@ and nf_atom env atom =
   | Aevar (ev,_) -> mkEvar ev
   | Aproj(p,c) ->
       let c = nf_accu env c in
-      mkProj(p,c)
+	mkProj(Projection.make p false,c)
   | _ -> fst (nf_atom_type env atom)
 
 and nf_atom_type env atom =
@@ -277,9 +280,9 @@ and nf_atom_type env atom =
       let n = (nb_rel env - i) in
       mkRel n, type_of_rel env n
   | Aconstant cst ->
-      mkConst cst, fst (Typeops.type_of_constant env (cst,Univ.Instance.empty)) (* FIXME *)
+      mkConstU cst, Typeops.type_of_constant_in env cst
   | Aind ind ->
-      mkInd ind, Inductiveops.type_of_inductive env (ind,Univ.Instance.empty)
+      mkIndU ind, Inductiveops.type_of_inductive env ind
   | Asort s ->
       mkSort s, type_of_sort s
   | Avar id ->
@@ -300,24 +303,26 @@ and nf_atom_type env atom =
       (* calcul des branches *)
       let bsw = branch_of_switch (nb_rel env) ans bs in
       let mkbranch i v =
-	let decl,codom = btypes.(i) in
-	let env = 
-	  List.fold_right 
-	    (fun (name,t) env -> push_rel (name,None,t) env) decl env in
-	let b = nf_val env v codom in
-	compose_lam decl b 
+       let decl,decl_with_letin,codom = btypes.(i) in
+       let b = nf_val (Termops.push_rels_assum decl env) v codom in
+        Termops.it_mkLambda_or_LetIn_from_no_LetIn b decl_with_letin
       in 
       let branchs = Array.mapi mkbranch bsw in
       let tcase = build_case_type dep p realargs a in
       let ci = ans.asw_ci in
       mkCase(ci, p, a, branchs), tcase 
   | Afix(tt,ft,rp,s) ->
-      let tt = Array.map (nf_type env) tt in
+      let tt = Array.map (fun t -> nf_type env t) tt in
       let name = Array.map (fun _ -> (Name (id_of_string "Ffix"))) tt in
       let lvl = nb_rel env in
+      let nbfix = Array.length ft in
       let fargs = mk_rels_accu lvl (Array.length ft) in
+      (* Third argument of the tuple is ignored by push_rec_types *)
       let env = push_rec_types (name,tt,[||]) env in
-      let ft = Array.mapi (fun i v -> nf_val env (napply v fargs) tt.(i)) ft in
+      (* We lift here because the types of arguments (in tt) will be evaluated
+         in an environment where the fixpoints have been pushed *)
+      let norm_body i v = nf_val env (napply v fargs) (lift nbfix tt.(i)) in
+      let ft = Array.mapi norm_body ft in
       mkFix((rp,s),(name,tt,ft)), tt.(s)
   | Acofix(tt,ft,s,_) | Acofixe(tt,ft,s,_) ->
       let tt = Array.map (nf_type env) tt in
@@ -342,7 +347,7 @@ and nf_atom_type env atom =
   | Aproj(p,c) ->
       let c,tc = nf_accu_type env c in
       let cj = make_judge c tc in
-      let uj = Typeops.judge_of_projection env p cj in
+      let uj = Typeops.judge_of_projection env (Projection.make p true) cj in
       uj.uj_val, uj.uj_type
 
 
@@ -384,7 +389,7 @@ let native_norm env sigma c ty =
   let ml_filename, prefix = Nativelib.get_ml_filename () in
   let code, upd = mk_norm_code penv sigma prefix c in
   match Nativelib.compile ml_filename code with
-    | 0,fn ->
+    | true, fn ->
         if !Flags.debug then Pp.msg_debug (Pp.str "Running norm ...");
         let t0 = Sys.time () in
         Nativelib.call_linker ~fatal:true prefix fn (Some upd);

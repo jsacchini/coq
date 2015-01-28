@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -38,7 +38,7 @@ let e_type_judgment env evdref j =
   match kind_of_term (whd_betadeltaiota env !evdref j.uj_type) with
     | Sort s -> {utj_val = j.uj_val; utj_type = s }
     | Evar ev ->
-        let (evd,s) = Evarutil.define_evar_as_sort !evdref ev in
+        let (evd,s) = Evarutil.define_evar_as_sort env !evdref ev in
         evdref := evd; { utj_val = j.uj_val; utj_type = s }
     | _ -> error_not_type env j
 
@@ -111,7 +111,7 @@ let e_type_case_branches env evdref (ind,largs) pj c =
   let p = pj.uj_val in
   let univ = e_is_correct_arity env evdref c pj ind specif params in
   let lc = build_branches_type ind specif params p in
-  let n = (snd specif).Declarations.mind_nrealargs_ctxt in
+  let n = (snd specif).Declarations.mind_nrealargs in
   let ty =
     whd_betaiota !evdref (Reduction.betazeta_appvect (n+1) p (Array.of_list (realargs@[c]))) in
   (lc, ty, univ)
@@ -263,11 +263,10 @@ and execute_recdef env evdref (names,lar,vdef) =
 
 and execute_array env evdref = Array.map (execute env evdref)
 
-let check env evd c t =
-  let evdref = ref evd in
+let check env evdref c t =
   let j = execute env evdref c in
   if not (Evarconv.e_cumul env evdref j.uj_type t) then
-    error_actual_type env j (nf_evar evd t)
+    error_actual_type env j (nf_evar !evdref t)
 
 (* Type of a constr *)
 
@@ -277,8 +276,7 @@ let type_of env evd c =
 
 (* Sort of a type *)
 
-let sort_of env evd c =
-  let evdref = ref evd in
+let sort_of env evdref c =
   let j = execute env evdref c in
   let a = e_type_judgment env evdref j in
   a.utj_type

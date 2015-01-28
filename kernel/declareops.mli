@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -8,6 +8,8 @@
 
 open Declarations
 open Mod_subst
+open Univ
+open Context
 
 (** Operations concerning types in [Declarations] :
     [constant_body], [mutual_inductive_body], [module_body] ... *)
@@ -28,14 +30,19 @@ val constant_has_body : constant_body -> bool
 (** Accessing const_body, forcing access to opaque proof term if needed.
     Only use this function if you know what you're doing. *)
 
-val body_of_constant : constant_body -> Term.constr option
-val constraints_of_constant : constant_body -> Univ.constraints
-val universes_of_constant : constant_body -> Univ.universe_context
+val body_of_constant :
+  Opaqueproof.opaquetab -> constant_body -> Term.constr option
+val type_of_constant : constant_body -> constant_type
+val constraints_of_constant :
+  Opaqueproof.opaquetab -> constant_body -> Univ.constraints
+val universes_of_constant :
+  Opaqueproof.opaquetab -> constant_body -> Univ.universe_context
 
 (** Return the universe context, in case the definition is polymorphic, otherwise
     the context is empty. *)
 
-val universes_of_polymorphic_constant : constant_body -> Univ.universe_context
+val universes_of_polymorphic_constant :
+  Opaqueproof.opaquetab -> constant_body -> Univ.universe_context
 
 val is_opaque : constant_body -> bool
 
@@ -70,7 +77,8 @@ val subst_wf_paths : substitution -> wf_paths -> wf_paths
 
 val subst_mind_body : substitution -> mutual_inductive_body -> mutual_inductive_body
 
-val join_constant_body : constant_body -> unit
+val inductive_instance : mutual_inductive_body -> universe_instance
+val inductive_context : mutual_inductive_body -> universe_context
 
 (** {6 Hash-consing} *)
 

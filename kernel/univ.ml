@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -10,8 +10,10 @@
 (* Functional code by Jean-Christophe Filliâtre for Coq V7.0 [1999] *)
 (* Extension with algebraic universes by HH for Coq V7.0 [Sep 2001] *)
 (* Additional support for sort-polymorphic inductive types by HH [Mar 2006] *)
+(* Support for universe polymorphism by MS [2014] *)
 
-(* Revisions by Bruno Barras, Hugo Herbelin, Pierre Letouzey *)
+(* Revisions by Bruno Barras, Hugo Herbelin, Pierre Letouzey, Matthieu Sozeau, 
+   Pierre-Marie Pédrot *)
 
 open Pp
 open Errors
@@ -29,83 +31,58 @@ open Util
    union-find algorithm. The assertions $<$ and $\le$ are represented by
    adjacency lists *)
 
-module Uid = struct
-  type t = int
-
-  let make_maker () =
-    let _id = ref ~-1 in
-    fun () -> incr _id;!_id
-
-  let dummy = -1
-  let to_int id = id
+module type Hashconsed =
+sig
+  type t
+  val hash : t -> int
+  val equal : t -> t -> bool
+  val hcons : t -> t
 end
 
-module Hcons = struct
-
-  type 'a node = { id : Uid.t; key : int; node : 'a }
-
-  module type S =
-  sig
-    type data
-    type t = data node
-    val make : data -> t
-    val node : t -> data
-    val hash : t -> int
-    val stats : unit -> unit
-    val init : unit -> unit
-  end
-
-  module Make (H : Hashtbl.HashedType) : S with type data = H.t =
+module HashedList (M : Hashconsed) :
+sig
+  type t = private Nil | Cons of M.t * int * t
+  val nil : t
+  val cons : M.t -> t -> t
+end =
+struct
+  type t = Nil | Cons of M.t * int * t
+  module Self =
   struct
-    let uid_make = Uid.make_maker()
-    type data = H.t
-    type t = data node
-    let node t = t.node
-    let hash t = t.key
-    module WH = Weak.Make( struct
-      type _t = t
-      type t = _t
-      let hash = hash
-      let equal a b = a == b || H.equal a.node b.node
-    end)
-    let pool = WH.create 491
-
-    let total_count = ref 0
-    let miss_count = ref 0
-    let init () =
-      total_count := 0;
-      miss_count := 0
-
-    let make x =
-      incr total_count;
-      let cell = { id = Uid.dummy; key = H.hash x; node = x } in
-        try
-        WH.find pool cell
-        with
-        | Not_found ->
-        let cell = { cell with id = uid_make(); } in
-          incr miss_count;
-          WH.add pool cell;
-          cell
-
-    let stats () = ()
+    type _t = t
+    type t = _t
+    type u = (M.t -> M.t)
+    let hash = function Nil -> 0 | Cons (_, h, _) -> h
+    let equal l1 l2 = match l1, l2 with
+    | Nil, Nil -> true
+    | Cons (x1, _, l1), Cons (x2, _, l2) -> x1 == x2 && l1 == l2
+    | _ -> false
+    let hashcons hc = function
+    | Nil -> Nil
+    | Cons (x, h, l) -> Cons (hc x, h, l)
   end
+  module Hcons = Hashcons.Make(Self)
+  let hcons = Hashcons.simple_hcons Hcons.generate Hcons.hcons M.hcons
+  (** No recursive call: the interface guarantees that all HLists from this
+      program are already hashconsed. If we get some external HList, we can
+      still reconstruct it by traversing it entirely. *)
+  let nil = Nil
+  let cons x l =
+    let h = M.hash x in
+    let hl = match l with Nil -> 0 | Cons (_, h, _) -> h in
+    let h = Hashset.Combine.combine h hl in
+    hcons (Cons (x, h, l))
 end
 
 module HList = struct
 
   module type S = sig
     type elt
-    type 'a node = Nil | Cons of elt * 'a
-    type t
-    type data = t node
+    type t = private Nil | Cons of elt * int * t
     val hash : t -> int
-    val make : data -> t
     val nil : t
-    val is_nil : t -> bool
+    val cons : elt -> t -> t
     val tip : elt -> t
-    val node : t -> t node
-    val cons : (* ?sorted:bool -> *) elt -> t -> t
     val fold : (elt -> 'a -> 'a) -> t -> 'a -> 'a
     val map : (elt -> elt) -> t -> t
     val smartmap : (elt -> elt) -> t -> t
@@ -118,132 +95,66 @@ module HList = struct
     val compare : (elt -> elt -> int) -> t -> t -> int
   end
 
-  module Make (H : Hashtbl.HashedType) : S with type elt = H.t =
+  module Make (H : Hashconsed) : S with type elt = H.t =
   struct
-    type elt = H.t
-    type 'a node = Nil | Cons of elt * 'a
+  type elt = H.t
+  include HashedList(H)
 
-    module rec Node : Hcons.S with type data = Data.t = Hcons.Make(Data)
+  let hash = function Nil -> 0 | Cons (_, h, _) -> h
 
-    and Data : Hashtbl.HashedType  with type t = Node.t node =
-    struct
-      type t = Node.t node
-      let equal x y =
-        match x,y with
-        | _,_ when x==y -> true
-        | Cons (a,aa), Cons(b,bb) -> (aa==bb) && (H.equal a b)
-        | _ -> false
-      let hash = function
-        | Nil -> 0
-        | Cons(a,aa) -> 17 + 65599 * (H.hash a) + 491 * (Uid.to_int aa.Hcons.id)
-    end
-    
-  type data = Data.t
-  type t = Node.t
-  let make = Node.make
-  let node x = x.Hcons.node
-  let hash x = x.Hcons.key
-  let nil = Node.make Nil
+  let tip e = cons e nil
 
-  let is_nil =
-    function { Hcons.node = Nil } -> true | _ -> false
+  let rec fold f l accu = match l with
+  | Nil -> accu
+  | Cons (x, _, l) -> fold f l (f x accu)
 
-  let cons e l =
-    Node.make(Cons(e, l))
-    
-  let tip e = Node.make (Cons(e, nil))
+  let rec map f = function
+  | Nil -> nil
+  | Cons (x, _, l) -> cons (f x) (map f l)
 
-  (* let cons ?(sorted=true) e l = *)
-  (*   if sorted then sorted_cons e l else cons e l *)
+  let smartmap = map
+  (** Apriori hashconsing ensures that the map is equal to its argument *)
 
-  let fold f l acc =
-    let rec loop acc l = match l.Hcons.node with
-      | Nil -> acc
-      | Cons (a, aa) -> loop (f a acc) aa
-    in
-      loop acc l
+  let rec exists f = function
+  | Nil -> false
+  | Cons (x, _, l) -> f x || exists f l
 
-  let map f l  =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> l
-      | Cons(a, aa) -> cons (f a) (loop aa)
-    in
-      loop l
+  let rec for_all f = function
+  | Nil -> true
+  | Cons (x, _, l) -> f x && for_all f l
 
-  let smartmap f l =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> l
-      | Cons (a, aa) -> 
-        let a' = f a in 
-          if a' == a then
-            let aa' = loop aa in
-              if aa' == aa then l
-              else cons a aa'
-          else cons a' (loop aa)
-    in loop l
+  let rec for_all2 f l1 l2 = match l1, l2 with
+  | Nil, Nil -> true
+  | Cons (x1, _, l1), Cons (x2, _, l2) -> f x1 x2 && for_all2 f l1 l2
+  | _ -> false
 
-  let exists f l =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> false
-      | Cons(a,aa) -> f a || loop aa
-    in
-      loop l
+  let rec to_list = function
+  | Nil -> []
+  | Cons (x, _, l) -> x :: to_list l
 
-  let for_all f l =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> true
-      | Cons(a,aa) -> f a && loop aa
-    in
-      loop l
+  let rec remove x = function
+  | Nil -> nil
+  | Cons (y, _, l) ->
+    if H.equal x y then l
+    else cons y (remove x l)
 
-  let for_all2 f l l' =
-    let rec loop l l' = match l.Hcons.node, l'.Hcons.node with
-      | Nil, Nil -> true
-      | Cons(a,aa), Cons(b,bb) -> f a b && loop aa bb
-      | _, _ -> false
-    in
-      loop l l'
+  let rec mem x = function
+  | Nil -> false
+  | Cons (y, _, l) -> H.equal x y || mem x l
 
-  let to_list l =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> []
-      | Cons(a,aa) -> a :: loop aa
-    in
-      loop l
-      
-  let remove x l =
-    let rec loop l = match l.Hcons.node with
-      | Nil -> l
-      | Cons(a,aa) -> 
-        if H.equal a x then aa
-        else cons a (loop aa)
-    in
-      loop l
+  let rec compare cmp l1 l2 = match l1, l2 with
+  | Nil, Nil -> 0
+  | Cons (x1, h1, l1), Cons (x2, h2, l2) ->
+    let c = Int.compare h1 h2 in
+    if c == 0 then
+      let c = cmp x1 x2 in
+      if c == 0 then
+        compare cmp l1 l2
+      else c
+    else c
+  | Cons _, Nil -> 1
+  | Nil, Cons _ -> -1
 
-  let rec mem e l =
-    match l.Hcons.node with
-    | Nil -> false
-    | Cons (x, ll) -> H.equal x e || mem e ll
-
-  let rec compare cmp l1 l2 =
-    if l1 == l2 then 0 
-    else
-      let hl1 = hash l1 and hl2 = hash l2 in
-      let c = Int.compare hl1 hl2 in
-        if c == 0 then 
-          let nl1 = node l1 in
-          let nl2 = node l2 in
-            if nl1 == nl2 then 0
-            else 
-              match nl1, nl2 with
-              | Nil, Nil -> assert false
-              | _, Nil -> 1
-              | Nil, _ -> -1
-              | Cons (x1,l1), Cons(x2,l2) ->
-                (match cmp x1 x2 with
-                | 0 -> compare cmp l1 l2
-                | c -> c)
-        else c
   end
 end
 
@@ -254,6 +165,7 @@ struct
     | Prop
     | Set
     | Level of int * DirPath.t
+    | Var of int
 
   (* Hash-consing *)
 
@@ -264,6 +176,7 @@ struct
       | Set, Set -> true
       | Level (n,d), Level (n',d') ->
         Int.equal n n' && DirPath.equal d d'
+      | Var n, Var n' -> Int.equal n n'
       | _ -> false
 
   let compare u v =
@@ -278,20 +191,26 @@ struct
       if i1 < i2 then -1
       else if i1 > i2 then 1
       else DirPath.compare dp1 dp2
-
+    | Level _, _ -> -1
+    | _, Level _ -> 1
+    | Var n, Var m -> Int.compare n m
+      
   let hcons = function
     | Prop as x -> x
     | Set as x -> x
     | Level (n,d) as x -> 
       let d' = Names.DirPath.hcons d in
         if d' == d then x else Level (n,d')
+    | Var n as x -> x
 
   open Hashset.Combine
 
   let hash = function
     | Prop -> combinesmall 1 0
     | Set -> combinesmall 1 1
-    | Level (n, d) -> combinesmall 2 (combine n (Names.DirPath.hash d))
+    | Var n -> combinesmall 2 n
+    | Level (n, d) -> combinesmall 3 (combine n (Names.DirPath.hash d))
+
 end
 
 module Level = struct
@@ -302,6 +221,7 @@ module Level = struct
   | Prop
   | Set
   | Level of int * DirPath.t
+  | Var of int
 
   (** Embed levels with their hash value *)
   type t = { 
@@ -359,12 +279,17 @@ module Level = struct
       let c = Int.compare (hash u) (hash v) in
 	if c == 0 then RawLevel.compare (data u) (data v)
 	else c
+
+  let natural_compare u v =
+    if u == v then 0
+    else RawLevel.compare (data u) (data v)
 	    
   let to_string x = 
     match data x with
     | Prop -> "Prop"
     | Set -> "Set"
     | Level (n,d) -> Names.DirPath.to_string d^"."^string_of_int n
+    | Var n -> "Var(" ^ string_of_int n ^ ")"
 
   let pr u = str (to_string u)
 
@@ -373,6 +298,14 @@ module Level = struct
     | Prop, Set | Set, Prop -> true
     | _ -> false
 
+  let vars = Array.init 20 (fun i -> make (Var i))
+
+  let var n = 
+    if n < 20 then vars.(n) else make (Var n)
+
+  let var_index u =
+    match data u with
+    | Var n -> Some n | _ -> None
 
   let make m n = make (Level (n, Names.DirPath.hcons m))
 
@@ -410,8 +343,8 @@ end
 module LSet = struct
   include LMap.Set
 
-  let pr s =
-    str"{" ++ prlist_with_sep spc Level.pr (elements s) ++ str"}"
+  let pr prl s =
+    str"{" ++ prlist_with_sep spc prl (elements s) ++ str"}"
 
   let of_array l =
     Array.fold_left (fun acc x -> add x acc) empty l
@@ -468,10 +401,12 @@ struct
     module HExpr = 
     struct 
 
-      include Hashcons.Make(ExprHash)
+      module H = Hashcons.Make(ExprHash)
 
-      let make =
-	Hashcons.simple_hcons generate Level.hcons
+      type t = ExprHash.t
+
+      let hcons =
+	Hashcons.simple_hcons H.generate H.hcons Level.hcons
       let hash = ExprHash.hash
       let equal x y = x == y ||
 	(let (u,n) = x and (v,n') = y in
@@ -479,7 +414,7 @@ struct
 
     end
 
-    let hcons = HExpr.make
+    let hcons = HExpr.hcons
 
     let make l = hcons (l, 0)
 
@@ -582,44 +517,41 @@ struct
 	  Huniv.compare (fun e1 e2 -> compare_expr e1 e2) x y
 	else c
 
-  let hcons_unique = Huniv.make
-  let hcons x = hcons_unique x
+  let rec hcons = function
+  | Nil -> Huniv.nil
+  | Cons (x, _, l) -> Huniv.cons x (hcons l)
 
   let make l = Huniv.tip (Expr.make l)
   let tip x = Huniv.tip x
-    
-  let pr l = match node l with
-    | Cons (u, n) when is_nil n -> Expr.pr u
+
+  let pr l = match l with
+    | Cons (u, _, Nil) -> Expr.pr u
     | _ -> 
       str "max(" ++ hov 0
 	(prlist_with_sep pr_comma Expr.pr (to_list l)) ++
         str ")"
 
-  let pr_with f l = match node l with
-    | Cons (u, n) when is_nil n -> Expr.pr_with f u
+  let pr_with f l = match l with
+    | Cons (u, _, Nil) -> Expr.pr_with f u
     | _ -> 
       str "max(" ++ hov 0
 	(prlist_with_sep pr_comma (Expr.pr_with f) (to_list l)) ++
         str ")"
-      
-  let atom l = match node l with
-    | Cons (l, n) when is_nil n -> Some l
-    | _ -> None
 
-  let is_level l = match node l with
-    | Cons (l, n) when is_nil n -> Expr.is_level l
+  let is_level l = match l with
+    | Cons (l, _, Nil) -> Expr.is_level l
     | _ -> false
 
-  let level l = match node l with
-    | Cons (l, n) when is_nil n -> Expr.level l
+  let level l = match l with
+    | Cons (l, _, Nil) -> Expr.level l
     | _ -> None
 
   let levels l = 
     fold (fun x acc -> LSet.add (Expr.get_level x) acc) l LSet.empty
 
   let is_small u = 
-    match node u with
-    | Cons (l, n) when is_nil n -> Expr.is_small l
+    match u with
+    | Cons (l, _, Nil) -> Expr.is_small l
     | _ -> false
 
   (* The lower predicative level of the hierarchy that contains (impredicative)
@@ -647,10 +579,10 @@ struct
     Huniv.map (fun x -> Expr.addn n x) l
 
   let rec merge_univs l1 l2 =
-    match node l1, node l2 with
+    match l1, l2 with
     | Nil, _ -> l2
     | _, Nil -> l1
-    | Cons (h1, t1), Cons (h2, t2) ->
+    | Cons (h1, _, t1), Cons (h2, _, t2) ->
       (match Expr.super h1 h2 with
       | Inl true (* h1 < h2 *) -> merge_univs t1 l2
       | Inl false -> merge_univs l1 t2
@@ -661,8 +593,8 @@ struct
 
   let sort u =
     let rec aux a l = 
-      match node l with
-      | Cons (b, l') -> 
+      match l with
+      | Cons (b, _, l') ->
         (match Expr.super a b with
 	| Inl false -> aux a l'
 	| Inl true -> l
@@ -678,7 +610,6 @@ struct
   let sup x y = merge_univs x y
 
   let empty = nil
-  let is_empty n = is_nil n
 
   let exists = Huniv.exists
 
@@ -1334,10 +1265,10 @@ struct
   module S = Set.Make(UConstraintOrd)
   include S
 
-  let pr c =
+  let pr prl c =
     fold (fun (u1,op,u2) pp_std ->
-      pp_std ++  Level.pr u1 ++ pr_constraint_type op ++
-	Level.pr u2 ++ fnl () )  c (str "")
+      pp_std ++ prl u1 ++ pr_constraint_type op ++
+	prl u2 ++ fnl () )  c (str "")
 
 end
 
@@ -1374,8 +1305,8 @@ module Hconstraints =
       let hash = Hashtbl.hash
     end)
 
-let hcons_constraint = Hashcons.simple_hcons Hconstraint.generate Level.hcons
-let hcons_constraints = Hashcons.simple_hcons Hconstraints.generate hcons_constraint
+let hcons_constraint = Hashcons.simple_hcons Hconstraint.generate Hconstraint.hcons Level.hcons
+let hcons_constraints = Hashcons.simple_hcons Hconstraints.generate Hconstraints.hcons hcons_constraint
 
 
 (** A value with universe constraints. *)
@@ -1431,9 +1362,10 @@ let check_univ_leq u v =
   Universe.for_all (fun u -> check_univ_leq_one u v) u
 
 let enforce_leq u v c =
-  match Huniv.node v with
-  | Universe.Huniv.Cons (v, n) when Universe.is_empty n -> 
-    Universe.Huniv.fold (fun u -> constraint_add_leq u v) u c
+  let open Universe.Huniv in
+  match v with
+  | Cons (v, _, Nil) ->
+    fold (fun u -> constraint_add_leq u v) u c
   | _ -> anomaly (Pp.str"A universe bound can only be a variable")
 
 let enforce_leq u v c =
@@ -1690,7 +1622,7 @@ let level_subst_of f =
     with Not_found -> l
      
 module Instance : sig 
-    type t
+    type t = Level.t array
 
     val empty : t
     val is_empty : t -> bool
@@ -1700,15 +1632,16 @@ module Instance : sig
 
     val append : t -> t -> t
     val equal : t -> t -> bool
+    val length : t -> int
+
     val hcons : t -> t
     val hash : t -> int
 
     val share : t -> t * int
 
-    val eqeq : t -> t -> bool
     val subst_fn : universe_level_subst_fn -> t -> t
     
-    val pr : t -> Pp.std_ppcmds
+    val pr : (Level.t -> Pp.std_ppcmds) -> t -> Pp.std_ppcmds
     val levels : t -> LSet.t
     val check_eq : t check_function 
 end = 
@@ -1757,7 +1690,7 @@ struct
 
   module HInstance = Hashcons.Make(HInstancestruct)
 
-  let hcons = Hashcons.simple_hcons HInstance.generate Level.hcons
+  let hcons = Hashcons.simple_hcons HInstance.generate HInstance.hcons Level.hcons
     
   let hash = HInstancestruct.hash
     
@@ -1770,13 +1703,13 @@ struct
   let append x y =
     if Array.length x = 0 then y
     else if Array.length y = 0 then x 
-    else hcons (Array.append x y)
+    else Array.append x y
 
-  let of_array a = hcons a
+  let of_array a = a
 
   let to_array a = a
 
-  let eqeq = HInstancestruct.equal
+  let length a = Array.length a
 
   let subst_fn fn t = 
     let t' = CArray.smartmap fn t in
@@ -1785,7 +1718,7 @@ struct
   let levels x = LSet.of_array x
 
   let pr =
-    prvect_with_sep spc Level.pr
+    prvect_with_sep spc
 
   let equal t u = 
     t == u ||
@@ -1815,6 +1748,8 @@ type universe_instance = Instance.t
 type 'a puniverses = 'a * Instance.t
 let out_punivs (x, y) = x
 let in_punivs x = (x, Instance.empty)
+let eq_puniverses f (x, u) (y, u') =
+  f x y && Instance.equal u u'
 
 (** A context of universe levels with universe constraints,
     representiong local universe variables and constraints *)
@@ -1829,9 +1764,9 @@ struct
   let empty = (Instance.empty, Constraint.empty)
   let is_empty (univs, cst) = Instance.is_empty univs && Constraint.is_empty cst
 
-  let pr (univs, cst as ctx) =
+  let pr prl (univs, cst as ctx) =
     if is_empty ctx then mt() else
-      Instance.pr univs ++ str " |= " ++ v 1 (Constraint.pr cst)
+      Instance.pr prl univs ++ str " |= " ++ v 0 (Constraint.pr prl cst)
 
   let hcons (univs, cst) =
     (Instance.hcons univs, hcons_constraints cst)
@@ -1841,6 +1776,8 @@ struct
 
   let union (univs, cst) (univs', cst') =
     Instance.append univs univs', Constraint.union cst cst'
+      
+  let dest x = x
 end
 
 type universe_context = UContext.t
@@ -1862,27 +1799,42 @@ struct
   let singleton l = of_set (LSet.singleton l)
   let of_instance i = of_set (Instance.levels i)
 
-  let union (univs, cst) (univs', cst') =
-    LSet.union univs univs', Constraint.union cst cst'
+  let union (univs, cst as x) (univs', cst' as y) =
+    if x == y then x
+    else LSet.union univs univs', Constraint.union cst cst'
+
+  let append (univs, cst) (univs', cst') =
+    let univs = LSet.fold LSet.add univs univs' in
+    let cst = Constraint.fold Constraint.add cst cst' in
+    (univs, cst)
 
   let diff (univs, cst) (univs', cst') =
     LSet.diff univs univs', Constraint.diff cst cst'
 
-  let add_constraints (univs, cst) cst' =
+  let add_universe u (univs, cst) =
+    LSet.add u univs, cst
+
+  let add_constraints cst' (univs, cst) =
     univs, Constraint.union cst cst'
 
-  let add_universes univs ctx =
-    union (of_instance univs) ctx
+  let add_instance inst (univs, cst) =
+    let v = Instance.to_array inst in
+    let fold accu u = LSet.add u accu in
+    let univs = Array.fold_left fold univs v in
+    (univs, cst)
+
+  let sort_levels a = 
+    Array.sort Level.natural_compare a; a
 
   let to_context (ctx, cst) =
-    (Instance.of_array (Array.of_list (LSet.elements ctx)), cst)
+    (Instance.of_array (sort_levels (Array.of_list (LSet.elements ctx))), cst)
 
   let of_context (ctx, cst) =
     (Instance.levels ctx, cst)
 
-  let pr (univs, cst as ctx) =
+  let pr prl (univs, cst as ctx) =
     if is_empty ctx then mt() else
-      LSet.pr univs ++ str " |= " ++ v 1 (Constraint.pr cst)
+      LSet.pr prl univs ++ str " |= " ++ v 0 (Constraint.pr prl cst)
 
   let constraints (univs, cst) = cst
   let levels (univs, cst) = univs
@@ -1896,12 +1848,6 @@ type 'a in_universe_context = 'a * universe_context
 type 'a in_universe_context_set = 'a * universe_context_set
 
 (** Substitutions. *)
-
-let make_universe_subst inst (ctx, csts) = 
-  try Array.fold_left2 (fun acc c i -> LMap.add c i acc)
-        LMap.empty (Instance.to_array ctx) (Instance.to_array inst)
-  with Invalid_argument _ -> 
-    anomaly (Pp.str "Mismatched instance and context when building universe substitution")
 
 let empty_subst = LMap.empty
 let is_empty_subst = LMap.is_empty
@@ -1921,6 +1867,11 @@ let subst_univs_level_universe subst u =
   let u' = Universe.smartmap f u in
     if u == u' then u
     else Universe.sort u'
+
+let subst_univs_level_instance subst i =
+  let i' = Instance.subst_fn (subst_univs_level_level subst) i in
+    if i == i' then i
+    else i'
 	
 let subst_univs_level_constraint subst (u,d,v) =
   let u' = subst_univs_level_level subst u 
@@ -1932,10 +1883,6 @@ let subst_univs_level_constraints subst csts =
   Constraint.fold 
     (fun c -> Option.fold_right Constraint.add (subst_univs_level_constraint subst c))
     csts Constraint.empty 
-
-(** Substitute instance inst for ctx in csts *)
-let instantiate_univ_context subst (_, csts) = 
-  subst_univs_level_constraints subst csts
 
 (** With level to universe substitutions. *)
 type universe_subst_fn = universe_level -> universe
@@ -1979,9 +1926,64 @@ let subst_univs_constraints subst csts =
     (fun c cstrs -> subst_univs_constraint subst c cstrs)
     csts Constraint.empty 
 
+let subst_instance_level s l =
+  match l.Level.data with
+  | Level.Var n -> s.(n) 
+  | _ -> l
+
+let subst_instance_instance s i = 
+  Array.smartmap (fun l -> subst_instance_level s l) i
+
+let subst_instance_universe s u =
+  let f x = Universe.Expr.map (fun u -> subst_instance_level s u) x in
+  let u' = Universe.smartmap f u in
+    if u == u' then u
+    else Universe.sort u'
+
+let subst_instance_constraint s (u,d,v as c) =
+  let u' = subst_instance_level s u in
+  let v' = subst_instance_level s v in
+    if u' == u && v' == v then c
+    else (u',d,v')
+
+let subst_instance_constraints s csts =
+  Constraint.fold 
+    (fun c csts -> Constraint.add (subst_instance_constraint s c) csts)
+    csts Constraint.empty 
+
+(** Substitute instance inst for ctx in csts *)
+let instantiate_univ_context (ctx, csts) = 
+  (ctx, subst_instance_constraints ctx csts)
+
+let instantiate_univ_constraints u (_, csts) = 
+  subst_instance_constraints u csts
+
+let make_instance_subst i = 
+  let arr = Instance.to_array i in
+    Array.fold_left_i (fun i acc l ->
+      LMap.add l (Level.var i) acc)
+      LMap.empty arr
+
+let make_inverse_instance_subst i = 
+  let arr = Instance.to_array i in
+    Array.fold_left_i (fun i acc l ->
+      LMap.add (Level.var i) l acc)
+      LMap.empty arr
+
+let abstract_universes poly ctx =
+  let instance = UContext.instance ctx in
+    if poly then
+      let subst = make_instance_subst instance in
+      let cstrs = subst_univs_level_constraints subst 
+	(UContext.constraints ctx)
+      in
+      let ctx = UContext.make (instance, cstrs) in
+	subst, ctx
+    else empty_level_subst, ctx
+
 (** Pretty-printing *)
 
-let pr_arc = function
+let pr_arc prl = function
   | _, Canonical {univ=u; lt=[]; le=[]} ->
       mt ()
   | _, Canonical {univ=u; lt=lt; le=le} ->
@@ -1989,20 +1991,20 @@ let pr_arc = function
       | [], _ | _, [] -> mt ()
       | _ -> spc ()
       in
-      Level.pr u ++ str " " ++
+      prl u ++ str " " ++
       v 0
-        (pr_sequence (fun v -> str "< " ++ Level.pr v) lt ++
+        (pr_sequence (fun v -> str "< " ++ prl v) lt ++
 	 opt_sep ++
-         pr_sequence (fun v -> str "<= " ++ Level.pr v) le) ++
+         pr_sequence (fun v -> str "<= " ++ prl v) le) ++
       fnl ()
   | u, Equiv v ->
-      Level.pr u  ++ str " = " ++ Level.pr v ++ fnl ()
+      prl u  ++ str " = " ++ prl v ++ fnl ()
 
-let pr_universes g =
+let pr_universes prl g =
   let graph = UMap.fold (fun u a l -> (u,a)::l) g [] in
-  prlist pr_arc graph
+  prlist (pr_arc prl) graph
 
-let pr_constraints = Constraint.pr
+let pr_constraints prl = Constraint.pr prl
 
 let pr_universe_context = UContext.pr
 
@@ -2020,8 +2022,8 @@ let dump_universes output g =
   let dump_arc u = function
     | Canonical {univ=u; lt=lt; le=le} ->
 	let u_str = Level.to_string u in
-	List.iter (fun v -> output Lt u_str (Level.to_string v)) lt;
-	List.iter (fun v -> output Le u_str (Level.to_string v)) le
+	List.iter (fun v -> output Lt (Level.to_string v) u_str) lt;
+	List.iter (fun v -> output Le (Level.to_string v) u_str) le
     | Equiv v ->
       output Eq (Level.to_string u) (Level.to_string v)
   in
@@ -2040,35 +2042,40 @@ module Huniverse_set =
     end)
 
 let hcons_universe_set = 
-  Hashcons.simple_hcons Huniverse_set.generate Level.hcons
+  Hashcons.simple_hcons Huniverse_set.generate Huniverse_set.hcons Level.hcons
 
 let hcons_universe_context_set (v, c) = 
   (hcons_universe_set v, hcons_constraints c)
 
-let hcons_univ x = Universe.hcons (Huniv.node x)
+let hcons_univ x = Universe.hcons x
 
-let explain_universe_inconsistency (o,u,v,p) =
-    let pr_rel = function
-      | Eq -> str"=" | Lt -> str"<" | Le -> str"<=" 
-    in
-    let reason = match p with
-      | None | Some [] -> mt()
-      | Some p ->
-	str " because" ++ spc() ++ pr_uni v ++
-	  prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ pr_uni v)
-	  p ++
-	  (if Universe.equal (snd (List.last p)) u then mt() else
-	      (spc() ++ str "= " ++ pr_uni u)) 
-    in
-      str "Cannot enforce" ++ spc() ++ pr_uni u ++ spc() ++
-        pr_rel o ++ spc() ++ pr_uni v ++ reason ++ str")"
+let explain_universe_inconsistency prl (o,u,v,p) =
+  let pr_uni = Universe.pr_with prl in
+  let pr_rel = function
+    | Eq -> str"=" | Lt -> str"<" | Le -> str"<=" 
+  in
+  let reason = match p with
+    | None | Some [] -> mt()
+    | Some p ->
+      str " because" ++ spc() ++ pr_uni v ++
+	prlist (fun (r,v) -> spc() ++ pr_rel r ++ str" " ++ pr_uni v)
+	p ++
+	(if Universe.equal (snd (List.last p)) u then mt() else
+	    (spc() ++ str "= " ++ pr_uni u)) 
+  in
+    str "Cannot enforce" ++ spc() ++ pr_uni u ++ spc() ++
+      pr_rel o ++ spc() ++ pr_uni v ++ reason ++ str")"
 
 let compare_levels = Level.compare
 let eq_levels = Level.equal
 let equal_universes = Universe.equal
 
 
-(*
+let subst_instance_constraints = 
+  if Flags.profile then 
+    let key = Profile.declare_profile "subst_instance_constraints" in
+      Profile.profile2 key subst_instance_constraints
+  else subst_instance_constraints
 
 let merge_constraints = 
   if Flags.profile then 
@@ -2092,4 +2099,3 @@ let check_leq =
     let check_leq_key = Profile.declare_profile "check_leq" in
       Profile.profile3 check_leq_key check_leq
   else check_leq
-*)

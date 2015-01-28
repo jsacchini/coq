@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -24,8 +24,6 @@ let get_env () = !genv
 let set_engagement c =
   genv := set_engagement c !genv
 
-let disable_termination_checking () =
-  genv := disable_termination_checking !genv
 
 (* full_add_module adds module with universes and constraints *)
 let full_add_module dp mb univs digest =

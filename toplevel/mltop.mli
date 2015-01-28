@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -55,6 +55,7 @@ val add_known_module : string -> unit
 val module_is_known : string -> bool
 val load_ml_object : string -> string -> unit
 val load_ml_object_raw : string -> unit
+val load_ml_objects_raw_rex : Str.regexp -> unit
 
 (** {5 Initialization functions} *)
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -185,17 +185,17 @@ Section DoubleSqrt.
   Notation wwB := (base (ww_digits w_digits)).
   Notation "[| x |]" := (w_to_Z x)  (at level 0, x at level 99).
   Notation "[+| c |]" :=
-   (interp_carry 1 wB w_to_Z c) (at level 0, x at level 99).
+   (interp_carry 1 wB w_to_Z c) (at level 0, c at level 99).
   Notation "[-| c |]" :=
-   (interp_carry (-1) wB w_to_Z c) (at level 0, x at level 99).
+   (interp_carry (-1) wB w_to_Z c) (at level 0, c at level 99).
 
   Notation "[[ x ]]" := (ww_to_Z w_digits w_to_Z x)(at level 0, x at level 99).
   Notation "[+[ c ]]" :=
    (interp_carry 1 wwB (ww_to_Z w_digits w_to_Z) c)
-   (at level 0, x at level 99).
+   (at level 0, c at level 99).
   Notation "[-[ c ]]" :=
    (interp_carry (-1) wwB (ww_to_Z w_digits w_to_Z) c)
-   (at level 0, x at level 99).
+   (at level 0, c at level 99).
 
   Notation "[|| x ||]" :=
     (zn2z_to_Z wwB (ww_to_Z w_digits w_to_Z) x)  (at level 0, x at level 99).
@@ -266,8 +266,8 @@ Section DoubleSqrt.
       if ww_is_even x then [[x]] mod 2 = 0 else [[x]] mod 2 = 1.
 clear spec_more_than_1_digit.
 intros x; case x; simpl ww_is_even.
+ reflexivity.
  simpl.
- rewrite Zmod_small; auto with zarith.
  intros w1 w2; simpl.
  unfold base.
  rewrite Zplus_mod; auto with zarith.

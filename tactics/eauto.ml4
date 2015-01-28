@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -27,10 +27,11 @@ open Tacexpr
 open Misctypes
 open Locus
 open Locusops
+open Hints
 
 DECLARE PLUGIN "eauto"
 
-let eauto_unif_flags = { auto_unif_flags with Unification.modulo_delta = full_transparent_state }
+let eauto_unif_flags = auto_flags_of_state full_transparent_state
 
 let e_give_exact ?(flags=eauto_unif_flags) c gl = let t1 = (pf_type_of gl c) and t2 = pf_concl gl in
   if occur_existential t1 || occur_existential t2 then
@@ -79,8 +80,8 @@ let apply_tac_list tac glls =
 
 let one_step l gl =
   [Proofview.V82.of_tactic Tactics.intro]
-  @ (List.map Tactics.Simple.eapply (List.map mkVar (pf_ids_of_hyps gl)))
-  @ (List.map Tactics.Simple.eapply l)
+  @ (List.map (fun c -> Proofview.V82.of_tactic (Tactics.Simple.eapply c)) (List.map mkVar (pf_ids_of_hyps gl)))
+  @ (List.map (fun c -> Proofview.V82.of_tactic (Tactics.Simple.eapply c)) l)
   @ (List.map assumption (pf_ids_of_hyps gl))
 
 let rec prolog l n gl =
@@ -122,7 +123,7 @@ let unify_e_resolve poly flags (c,clenv) gls =
   let clenv' = connect_clenv gls clenv' in
   let clenv' = clenv_unique_resolver ~flags clenv' gls in
     tclTHEN (Refiner.tclEVARUNIVCONTEXT (Evd.evar_universe_context clenv'.evd))
-      (Tactics.Simple.eapply (Vars.subst_univs_level_constr subst c)) gls
+      (Proofview.V82.of_tactic (Tactics.Simple.eapply (Vars.subst_univs_level_constr subst c))) gls
 
 let e_exact poly flags (c,clenv) =
   let clenv', subst = 
@@ -141,26 +142,26 @@ let rec e_trivial_fail_db db_list local_db goal =
 	      (Hint_db.add_list hintl local_db) g'))) ::
     (List.map fst (e_trivial_resolve db_list local_db (pf_concl goal)) )
   in
-  tclFIRST (List.map tclCOMPLETE tacl) goal
+    tclFIRST (List.map tclCOMPLETE tacl) goal
 
 and e_my_find_search db_list local_db hdc concl =
-  let hdc = head_of_constr_reference hdc in
   let hintl =
     if occur_existential concl then
       List.map_append (fun db ->
-	let flags = {auto_unif_flags with modulo_delta = Hint_db.transparent_state db} in
-	  List.map (fun x -> flags, x) (Hint_db.map_all hdc db)) (local_db::db_list)
+	let flags = auto_flags_of_state (Hint_db.transparent_state db) in
+	  List.map (fun x -> flags, x) (Hint_db.map_existential hdc concl db)
+   (* FIXME: should be (Hint_db.map_eauto hdc concl db) *)) (local_db::db_list)
     else
       List.map_append (fun db ->
-	let flags = {auto_unif_flags with modulo_delta = Hint_db.transparent_state db} in
-	  List.map (fun x -> flags, x) (Hint_db.map_auto (hdc,concl) db)) (local_db::db_list)
+	let flags = auto_flags_of_state (Hint_db.transparent_state db) in
+	  List.map (fun x -> flags, x) (Hint_db.map_auto hdc concl db)) (local_db::db_list)
   in
   let tac_of_hint =
     fun (st, {pri = b; pat = p; code = t; poly = poly}) ->
       (b,
        let tac =
 	 match t with
-	   | Res_pf (term,cl) -> unify_resolve poly st (term,cl)
+	   | Res_pf (term,cl) -> Proofview.V82.of_tactic (unify_resolve poly st (term,cl))
 	   | ERes_pf (term,cl) -> unify_e_resolve poly st (term,cl)
 	   | Give_exact (c,cl) -> e_exact poly st (c,cl)
 	   | Res_pf_THEN_trivial_fail (term,cl) ->
@@ -177,13 +178,13 @@ and e_trivial_resolve db_list local_db gl =
   try
     priority
       (e_my_find_search db_list local_db
-	 (head_constr_bound gl) gl)
+	 (decompose_app_bound gl) gl)
   with Bound | Not_found -> []
 
 let e_possible_resolve db_list local_db gl =
   try List.map snd
     (e_my_find_search db_list local_db
-	(head_constr_bound gl) gl)
+	(decompose_app_bound gl) gl)
   with Bound | Not_found -> []
 
 let find_first_goal gls =
@@ -196,8 +197,8 @@ type search_state = {
   depth : int; (*r depth of search before failing *)
   tacres : goal list sigma;
   last_tactic : std_ppcmds Lazy.t;
-  dblist : Auto.hint_db list;
-  localdb :  Auto.hint_db list;
+  dblist : hint_db list;
+  localdb :  hint_db list;
   prev : prev_search_state
 }
 
@@ -227,6 +228,7 @@ module SearchProblem = struct
 (* 	      msg (hov 1 (pptac ++ str" gives: \n" ++ pr_goals lgls ++ str"\n")); *)
 	      (lgls,pptac) :: aux tacl
 	  with e when Errors.noncritical e ->
+            let e = Errors.push e in
             Refiner.catch_failerror e; aux tacl
     in aux l
 
@@ -289,7 +291,7 @@ module SearchProblem = struct
 		     let gls = {Evd.it = gl; sigma = lgls.Evd.sigma } in
 		     let hyps' = pf_hyps gls in
 		       if hyps' == hyps then List.hd s.localdb
-		       else make_local_hint_db ~ts:full_transparent_state true [] gls)
+		       else make_local_hint_db (pf_env gls) (project gls) ~ts:full_transparent_state true [])
 		     (List.firstn ((nbgl'-nbgl) + 1) (sig_it lgls))
 	       in
 		 { depth = pred s.depth; tacres = res;
@@ -369,7 +371,7 @@ let make_initial_state dbg n gl dblist localdb =
   }
 
 let e_search_auto debug (in_depth,p) lems db_list gl =
-  let local_db = make_local_hint_db ~ts:full_transparent_state true lems gl in
+  let local_db = make_local_hint_db (pf_env gl) (project gl) ~ts:full_transparent_state true lems in
   let d = mk_eauto_dbg debug in
   let tac = match in_depth,d with
     | (true,Debug) -> Search.debug_depth_first
@@ -483,15 +485,17 @@ END
 
 let cons a l = a :: l
 
-let autounfolds db occs =
+let autounfolds db occs cls gl =
   let unfolds = List.concat (List.map (fun dbname -> 
     let db = try searchtable_map dbname 
       with Not_found -> errorlabstrm "autounfold" (str "Unknown database " ++ str dbname)
     in
     let (ids, csts) = Hint_db.unfolds db in
+    let hyps = pf_ids_of_hyps gl in
+    let ids = Idset.filter (fun id -> List.mem id hyps) ids in
       Cset.fold (fun cst -> cons (AllOccurrences, EvalConstRef cst)) csts
 	(Id.Set.fold (fun id -> cons (AllOccurrences, EvalVarRef id)) ids [])) db)
-  in unfold_option unfolds
+  in unfold_option unfolds cls gl
 
 let autounfold db cls gl =
   let cls = concrete_clause_of (fun () -> pf_ids_of_hyps gl) cls in
@@ -503,7 +507,7 @@ let autounfold db cls gl =
 
 let autounfold_tac db cls gl =
   let dbs = match db with
-  | None -> String.Set.elements (Auto.current_db_names ())
+  | None -> String.Set.elements (current_db_names ())
   | Some [] -> ["core"]
   | Some l -> l
   in
@@ -545,7 +549,10 @@ let unfold_head env (ids, csts) c =
 	in !done_, c'
   in aux c
 
-let autounfold_one db cl gl =
+let autounfold_one db cl =
+  Proofview.Goal.nf_enter begin fun gl ->
+  let env = Proofview.Goal.env gl in
+  let concl = Proofview.Goal.concl gl in
   let st =
     List.fold_left (fun (i,c) dbname -> 
       let db = try searchtable_map dbname 
@@ -554,14 +561,15 @@ let autounfold_one db cl gl =
       let (ids, csts) = Hint_db.unfolds db in
 	(Id.Set.union ids i, Cset.union csts c)) (Id.Set.empty, Cset.empty) db
   in
-  let did, c' = unfold_head (pf_env gl) st 
-    (match cl with Some (id, _) -> pf_get_hyp_typ gl id | None -> pf_concl gl) 
+  let did, c' = unfold_head env st 
+    (match cl with Some (id, _) -> Tacmach.New.pf_get_hyp_typ id gl | None -> concl) 
   in
     if did then
       match cl with
-      | Some hyp -> change_in_hyp None (fun env sigma -> sigma, c') hyp gl
-      | None -> convert_concl_no_check c' DEFAULTcast gl
-    else tclFAIL 0 (str "Nothing to unfold") gl
+      | Some hyp -> change_in_hyp None (fun sigma -> sigma, c') hyp
+      | None -> convert_concl_no_check c' DEFAULTcast
+    else Tacticals.New.tclFAIL 0 (str "Nothing to unfold")
+  end
 
 (* 	  Cset.fold (fun cst -> cons (all_occurrences, EvalConstRef cst)) csts *)
 (* 	    (Id.Set.fold (fun id -> cons (all_occurrences, EvalVarRef id)) ids [])) db) *)
@@ -577,9 +585,9 @@ let autounfold_one db cl gl =
       
 TACTIC EXTEND autounfold_one
 | [ "autounfold_one" hintbases(db) "in" hyp(id) ] ->
-    [ Proofview.V82.tactic (autounfold_one (match db with None -> ["core"] | Some x -> "core"::x) (Some (id, InHyp))) ]
+    [ autounfold_one (match db with None -> ["core"] | Some x -> "core"::x) (Some (id, InHyp)) ]
 | [ "autounfold_one" hintbases(db) ] ->
-    [ Proofview.V82.tactic (autounfold_one (match db with None -> ["core"] | Some x -> "core"::x) None) ]
+    [ autounfold_one (match db with None -> ["core"] | Some x -> "core"::x) None ]
       END
 
 TACTIC EXTEND autounfoldify
@@ -593,7 +601,7 @@ TACTIC EXTEND autounfoldify
 END
 
 TACTIC EXTEND unify
-| ["unify" constr(x) constr(y) ] -> [ Proofview.V82.tactic (unify x y) ]
+| ["unify" constr(x) constr(y) ] -> [ unify x y ]
 | ["unify" constr(x) constr(y) "with" preident(base)  ] -> [
     let table = try Some (searchtable_map base) with Not_found -> None in
     match table with
@@ -602,13 +610,13 @@ TACTIC EXTEND unify
       Proofview.tclZERO (UserError ("", msg))
     | Some t ->
       let state = Hint_db.transparent_state t in
-      Proofview.V82.tactic (unify ~state x y)
+      unify ~state x y
   ]
 END
 
 
 TACTIC EXTEND convert_concl_no_check
-| ["convert_concl_no_check" constr(x) ] -> [ Proofview.V82.tactic (convert_concl_no_check x DEFAULTcast) ]
+| ["convert_concl_no_check" constr(x) ] -> [ convert_concl_no_check x DEFAULTcast ]
 END
 
 
@@ -659,6 +667,6 @@ END
 VERNAC COMMAND EXTEND HintCut CLASSIFIED AS SIDEFF
 | [ "Hint" "Cut" "[" hints_path(p) "]" opthints(dbnames) ] -> [
   let entry = HintsCutEntry p in
-    Auto.add_hints (Locality.make_section_locality (Locality.LocalityFixme.consume ()))
+    Hints.add_hints (Locality.make_section_locality (Locality.LocalityFixme.consume ()))
       (match dbnames with None -> ["core"] | Some l -> l) entry ]
 END

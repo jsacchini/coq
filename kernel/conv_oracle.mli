@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -16,7 +16,8 @@ val empty : oracle
    If [oracle_order kn1 kn2] is true, then unfold kn1 first.
    Note: the oracle does not introduce incompleteness, it only
    tries to postpone unfolding of "opaque" constants. *)
-val oracle_order : oracle -> bool -> constant tableKey -> constant tableKey -> bool
+val oracle_order : ('a -> constant) -> oracle -> bool -> 
+  'a tableKey -> 'a tableKey -> bool
 
 (** Priority for the expansion of constant in the conversion test.
  * Higher levels means that the expansion is less prioritary.

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -165,10 +165,10 @@ let word_of_pos_bigint dloc hght n =
     if hgt <= 0 then
       int31_of_pos_bigint dloc n
     else if equal n zero then
-      GApp (dloc, ref_W0, [GHole (dloc, Evar_kinds.InternalHole, None)])
+      GApp (dloc, ref_W0, [GHole (dloc, Evar_kinds.InternalHole, Misctypes.IntroAnonymous, None)])
     else
       let (h,l) = split_at hgt n in
-      GApp (dloc, ref_WW, [GHole (dloc, Evar_kinds.InternalHole, None);
+      GApp (dloc, ref_WW, [GHole (dloc, Evar_kinds.InternalHole, Misctypes.IntroAnonymous, None);
 			   decomp (hgt-1) h;
 			   decomp (hgt-1) l])
   in

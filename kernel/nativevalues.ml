@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2013     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -49,12 +49,13 @@ let eq_rec_pos = Array.equal Int.equal
 
 type atom = 
   | Arel of int
-  | Aconstant of constant
-  | Aind of inductive
+  | Aconstant of pconstant
+  | Aind of pinductive
   | Asort of sorts
   | Avar of identifier
   | Acase of annot_sw * accumulator * t * (t -> t)
-  | Afix of  t array * t array * rec_pos * int
+  | Afix of t array * t array * rec_pos * int
+            (* types, bodies, rec_pos, pos *)
   | Acofix of t array * t array * int * t
   | Acofixe of t array * t array * int * t
   | Aprod of name * t * (t -> t)
@@ -105,14 +106,19 @@ let mk_rels_accu lvl len =
 let napply (f:t) (args: t array) =
   Array.fold_left (fun f a -> f a) f args
 
-let mk_constant_accu kn = 
-  mk_accu (Aconstant kn)
+let mk_constant_accu kn u = 
+  mk_accu (Aconstant (kn,Univ.Instance.of_array u))
 
-let mk_ind_accu s = 
-  mk_accu (Aind s)
+let mk_ind_accu ind u = 
+  mk_accu (Aind (ind,Univ.Instance.of_array u))
 
-let mk_sort_accu s =
-  mk_accu (Asort s)
+let mk_sort_accu s u =
+  match s with
+  | Prop _ -> mk_accu (Asort s)
+  | Type s ->
+     let u = Univ.Instance.of_array u in
+     let s = Univ.subst_instance_universe u s in
+     mk_accu (Asort (Type s))
 
 let mk_var_accu id = 
   mk_accu (Avar id)
@@ -364,6 +370,11 @@ type coq_pair =
   | Paccu of t
   | PPair of t * t
 
+type coq_zn2z =
+  | Zaccu of t
+  | ZW0
+  | ZWW of t * t
+
 let mkCarry b i =
   if b then (Obj.magic (C1(of_uint i)):t)
   else (Obj.magic (C0(of_uint i)):t)
@@ -407,8 +418,13 @@ let subcarryc accu x y =
 let of_pair (x, y) =
   (Obj.magic (PPair(of_uint x, of_uint y)):t)
 
+let zn2z_of_pair (x,y) =
+  if Uint31.equal x (Uint31.of_uint 0) &&
+    Uint31.equal y (Uint31.of_uint 0) then Obj.magic ZW0
+  else (Obj.magic (ZWW(of_uint x, of_uint y)) : t)
+
 let no_check_mulc x y =
-    of_pair(Uint31.mulc (to_uint x) (to_uint y))
+  zn2z_of_pair(Uint31.mulc (to_uint x) (to_uint y))
 
 let mulc accu x y =
   if is_int x && is_int y then no_check_mulc x y

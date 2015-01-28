@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -21,19 +21,19 @@ Require Import Logic.
     Similarly [(sig2 A P Q)], or [{x:A | P x & Q x}], denotes the subset
     of elements of the type [A] which satisfy both [P] and [Q]. *)
 
-(* Polymorphic *) Inductive sig (A:Type) (P:A -> Prop) : Type :=
+Inductive sig (A:Type) (P:A -> Prop) : Type :=
     exist : forall x:A, P x -> sig P.
 
-(* Polymorphic *) Inductive sig2 (A:Type) (P Q:A -> Prop) : Type :=
+Inductive sig2 (A:Type) (P Q:A -> Prop) : Type :=
     exist2 : forall x:A, P x -> Q x -> sig2 P Q.
 
 (** [(sigT A P)], or more suggestively [{x:A & (P x)}] is a Sigma-type.
     Similarly for [(sigT2 A P Q)], also written [{x:A & (P x) & (Q x)}]. *)
 
-(* Polymorphic *) Inductive sigT (A:Type) (P:A -> Type) : Type :=
+Inductive sigT (A:Type) (P:A -> Type) : Type :=
     existT : forall x:A, P x -> sigT P.
 
-(* Polymorphic *) Inductive sigT2 (A:Type) (P Q:A -> Type) : Type :=
+Inductive sigT2 (A:Type) (P Q:A -> Type) : Type :=
     existT2 : forall x:A, P x -> Q x -> sigT2 P Q.
 
 (* Notations *)
@@ -285,7 +285,7 @@ Section Exc.
   Definition value := @Some A.
   Definition error := @None A.
 End Exc.
-Arguments error [A].
+Arguments error {A}.
 
 Definition except := False_rec. (* for compatibility with previous versions *)
 

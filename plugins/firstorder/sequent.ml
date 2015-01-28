@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -204,7 +204,7 @@ let extend_with_ref_list l seq gl =
       (add_formula Hyp gr typ seq gl,gl) in
     List.fold_right f l (seq,gl)
 
-open Auto
+open Hints
 
 let extend_with_auto_hints l seq gl=
   let seqref=ref seq in
@@ -218,7 +218,7 @@ let extend_with_auto_hints l seq gl=
 	       seqref:=add_formula Hint gr typ !seqref gl
 	   with Not_found->())
       | _-> () in
-  let g _ l = List.iter f l in
+  let g _ _ l = List.iter f l in
   let h dbname=
     let hdb=
       try
@@ -231,7 +231,7 @@ let extend_with_auto_hints l seq gl=
 
 let print_cmap map=
   let print_entry c l s=
-    let xc=Constrextern.extern_constr false (Global.env ()) c in
+    let xc=Constrextern.extern_constr false (Global.env ()) Evd.empty c in
       str "| " ++
       prlist Printer.pr_global l ++
       str " : " ++

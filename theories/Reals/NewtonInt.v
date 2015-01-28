@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -63,14 +63,16 @@ Proof.
       [ apply derivable_pt_lim_const | apply derivable_pt_lim_id ]
       | unfold id, fct_cte; rewrite H2; ring ].
   right; reflexivity.
-Defined.
+Qed.
 
 (* $\int_a^a f = 0$ *)
 Lemma NewtonInt_P2 :
   forall (f:R -> R) (a:R), NewtonInt f a a (NewtonInt_P1 f a) = 0.
 Proof.
   intros; unfold NewtonInt; simpl;
-    unfold mult_fct, fct_cte, id; ring.
+    unfold mult_fct, fct_cte, id.
+  destruct NewtonInt_P1 as [g _].
+  now apply Rminus_diag_eq.
 Qed.
 
 (* If $\int_a^b f$ exists, then $\int_b^a f$ exists too *)
@@ -545,7 +547,7 @@ Proof.
   assert (X2 := NewtonInt_P3 f b c X0).
   apply NewtonInt_P3.
   apply NewtonInt_P7 with b; assumption.
-Defined.
+Qed.
 
 (* Chasles' relation *)
 Lemma NewtonInt_P9 :

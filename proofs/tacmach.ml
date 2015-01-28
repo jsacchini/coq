@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -76,6 +76,7 @@ let pf_apply f gls = f (pf_env gls) (project gls)
 let pf_eapply f gls x = 
   on_sig gls (fun evm -> f (pf_env gls) evm x)
 let pf_reduce = pf_apply
+let pf_e_reduce = pf_apply
 
 let pf_whd_betadeltaiota         = pf_reduce whd_betadeltaiota
 let pf_hnf_constr                = pf_reduce hnf_constr
@@ -95,18 +96,14 @@ let pf_reduce_to_atomic_ind     = pf_reduce reduce_to_atomic_ind
 
 let pf_hnf_type_of gls = compose (pf_whd_betadeltaiota gls) (pf_get_type_of gls)
 
-let pf_is_matching              = pf_apply ConstrMatching.is_matching_conv
-let pf_matches                  = pf_apply ConstrMatching.matches_conv
+let pf_is_matching              = pf_apply Constr_matching.is_matching_conv
+let pf_matches                  = pf_apply Constr_matching.matches_conv
 
 (********************************************)
 (* Definition of the most primitive tactics *)
 (********************************************)
 
 let refiner = refiner
-
-(* This does not check that the variable name is not here *)
-let introduction_no_check id =
-  refiner (Intro id)
 
 let internal_cut_no_check replace id t gl =
   refiner (Cut (true,replace,id,t)) gl
@@ -117,28 +114,12 @@ let internal_cut_rev_no_check replace id t gl =
 let refine_no_check c gl =
   refiner (Refine c) gl
 
-let convert_concl_no_check c sty gl =
-  refiner (Convert_concl (c,sty)) gl
-
-let convert_hyp_no_check d gl =
-  refiner (Convert_hyp d) gl
-
 (* This does not check dependencies *)
 let thin_no_check ids gl =
   if List.is_empty ids then tclIDTAC gl else refiner (Thin ids) gl
 
-(* This does not check dependencies *)
-let thin_body_no_check ids gl =
-  if List.is_empty ids then tclIDTAC gl else refiner (ThinBody ids) gl
-
-let move_hyp_no_check with_dep id1 id2 gl =
-  refiner (Move (with_dep,id1,id2)) gl
-
-let rec rename_hyp_no_check l gl = match l with
-  | [] -> tclIDTAC gl
-  | (id1,id2)::l ->
-      tclTHEN (refiner (Rename (id1,id2)))
-	(rename_hyp_no_check l) gl
+let move_hyp_no_check id1 id2 gl =
+  refiner (Move (id1,id2)) gl
 
 let mutual_fix f n others j gl =
   with_check (refiner (FixRule (f,n,others,j))) gl
@@ -148,16 +129,11 @@ let mutual_cofix f others j gl =
 
 (* Versions with consistency checks *)
 
-let introduction id    = with_check (introduction_no_check id)
 let internal_cut b d t = with_check (internal_cut_no_check b d t)
 let internal_cut_rev b d t = with_check (internal_cut_rev_no_check b d t)
 let refine c           = with_check (refine_no_check c)
-let convert_concl d sty = with_check (convert_concl_no_check d sty)
-let convert_hyp d      = with_check (convert_hyp_no_check d)
 let thin c             = with_check (thin_no_check c)
-let thin_body c        = with_check (thin_body_no_check c)
-let move_hyp b id id'  = with_check (move_hyp_no_check b id id')
-let rename_hyp l       = with_check (rename_hyp_no_check l)
+let move_hyp id id'  = with_check (move_hyp_no_check id id')
 
 (* Pretty-printers *)
 
@@ -194,6 +170,7 @@ module New = struct
     Constrintern.construct_reference hyps id
 
   let pf_env = Proofview.Goal.env
+  let pf_concl = Proofview.Goal.concl
 
   let pf_type_of gl t =
     pf_apply type_of gl t
@@ -249,7 +226,7 @@ module New = struct
   let pf_hnf_type_of gl t =
     pf_whd_betadeltaiota gl (pf_get_type_of gl t)
 
-  let pf_matches gl pat t = pf_apply ConstrMatching.matches_conv gl pat t
+  let pf_matches gl pat t = pf_apply Constr_matching.matches_conv gl pat t
 
   let pf_whd_betadeltaiota gl t = pf_apply whd_betadeltaiota gl t
   let pf_compute gl t = pf_apply compute gl t

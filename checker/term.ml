@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,6 +23,11 @@ let family_of_sort = function
   | Type _ -> InType
 
 let family_equal = (==)
+
+let sort_of_univ u =
+  if Univ.is_type0m_univ u then Prop Null
+  else if Univ.is_type0_univ u then Prop Pos
+  else Type u
 
 (********************************************************************)
 (*       Constructions as implemented                               *)
@@ -387,6 +392,7 @@ let compare_constr f t1 t2 =
       Array.equal f tl1 tl2 && Array.equal f bl1 bl2
   | CoFix(ln1,(_,tl1,bl1)), CoFix(ln2,(_,tl2,bl2)) ->
       Int.equal ln1 ln2 && Array.equal f tl1 tl2 && Array.equal f bl1 bl2
+  | Proj (p1,c1), Proj(p2,c2) -> eq_con_chk p1 p2 && f c1 c2
   | _ -> false
 
 let rec eq_constr m n =
@@ -399,44 +405,10 @@ let eq_constr m n = eq_constr m n (* to avoid tracing a recursive fun *)
 
 let map_constr f c = map_constr_with_binders (fun x -> x) (fun _ c -> f c) 0 c
 
-let subst_univs_fn_constr f c =
-  let changed = ref false in
-  let fu = Univ.subst_univs_universe f in
-  let fi = Univ.Instance.subst_fn (Univ.level_subst_of f) in
-  let rec aux t = 
-    match t with
-    | Sort (Type u) -> 
-      let u' = fu u in
-	if u' == u then t else 
-	  (changed := true; Sort (Type u'))
-    | Const (c, u) -> 
-      let u' = fi u in 
-	if u' == u then t
-	else (changed := true; Const (c, u'))
-    | Ind (i, u) ->
-      let u' = fi u in 
-	if u' == u then t
-	else (changed := true; Ind (i, u'))
-    | Construct (c, u) ->
-      let u' = fi u in 
-	if u' == u then t
-	else (changed := true; Construct (c, u'))
-    | _ -> map_constr aux t
-  in 
-  let c' = aux c in
-    if !changed then c' else c
-
-let subst_univs_constr subst c =
-  if Univ.is_empty_subst subst then c
-  else 
-    let f = Univ.make_subst subst in
-      subst_univs_fn_constr f c
-
-
-let subst_univs_level_constr subst c =
-  if Univ.is_empty_level_subst subst then c
-  else 
-    let f = Univ.Instance.subst_fn (Univ.subst_univs_level_level subst) in
+let subst_instance_constr subst c =
+  if Univ.Instance.is_empty subst then c
+  else
+    let f u = Univ.subst_instance_instance subst u in
     let changed = ref false in
     let rec aux t = 
       match t with
@@ -459,13 +431,14 @@ let subst_univs_level_constr subst c =
 	    if u' == u then t
 	    else (changed := true; Construct (c, u'))
       | Sort (Type u) -> 
-         let u' = Univ.subst_univs_level_universe subst u in
+         let u' = Univ.subst_instance_universe subst u in
 	   if u' == u then t else 
-	     (changed := true; Sort (Type u'))
+	     (changed := true; Sort (sort_of_univ u'))
       | _ -> map_constr aux t
     in
     let c' = aux c in
       if !changed then c' else c
 
-let subst_univs_level_context s = 
-  map_rel_context (subst_univs_level_constr s)
+let subst_instance_context s ctx = 
+  if Univ.Instance.is_empty s then ctx
+  else map_rel_context (fun x -> subst_instance_constr s x) ctx

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -56,7 +56,7 @@ val delete_all_proofs : unit -> unit
 type lemma_possible_guards = Proof_global.lemma_possible_guards
 
 val start_proof :
-  Id.t -> goal_kind -> Evd.evar_universe_context -> named_context_val -> constr ->
+  Id.t -> goal_kind -> Evd.evar_map -> named_context_val -> constr ->
   ?init_tac:unit Proofview.tactic ->
   Proof_global.proof_terminator -> unit
 
@@ -117,7 +117,7 @@ val set_end_tac : Tacexpr.raw_tactic_expr -> unit
 (** {6 ... } *)
 (** [set_used_variables l] declares that section variables [l] will be
     used in the proof *)
-val set_used_variables : Id.t list -> unit
+val set_used_variables : Id.t list -> Context.section_context
 val get_used_variables : unit -> Context.section_context option
 
 (** {6 ... } *)
@@ -126,7 +126,8 @@ val get_used_variables : unit -> Context.section_context option
     proof is focused or if there is no [n]th subgoal. [solve SelectAll
     tac] applies [tac] to all subgoals. *)
 
-val solve : ?with_end_tac:unit Proofview.tactic -> Vernacexpr.goal_selector -> unit Proofview.tactic ->
+val solve : ?with_end_tac:unit Proofview.tactic ->
+      Vernacexpr.goal_selector -> int option -> unit Proofview.tactic ->
       Proof.proof -> Proof.proof*bool
 
 (** [by tac] applies tactic [tac] to the 1st subgoal of the current
@@ -155,6 +156,14 @@ val build_constant_by_tactic :
 val build_by_tactic : env -> Evd.evar_universe_context -> ?poly:polymorphic -> 
   types -> unit Proofview.tactic -> 
   constr * bool * Evd.evar_universe_context
+
+val refine_by_tactic : env -> Evd.evar_map -> types -> unit Proofview.tactic ->
+  constr * Evd.evar_map
+(** A variant of the above function that handles open terms as well.
+    Caveat: all effects are purged in the returned term at the end, but other
+    evars solved by side-effects are NOT purged, so that unexpected failures may
+    occur. Ideally all code using this function should be rewritten in the
+    monad. *)
 
 (** Declare the default tactic to fill implicit arguments *)
 

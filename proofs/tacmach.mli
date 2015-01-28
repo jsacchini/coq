@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -50,7 +50,7 @@ val pf_get_hyp_typ        : goal sigma -> Id.t -> types
 val pf_get_new_id  : Id.t      -> goal sigma -> Id.t
 val pf_get_new_ids : Id.t list -> goal sigma -> Id.t list
 
-val pf_reduction_of_red_expr : goal sigma -> red_expr -> constr -> constr
+val pf_reduction_of_red_expr : goal sigma -> red_expr -> constr -> evar_map * constr
 
 
 val pf_apply : (env -> evar_map -> 'a) -> goal sigma -> 'a
@@ -59,6 +59,9 @@ val pf_eapply : (env -> evar_map -> 'a -> evar_map * 'b) ->
 val pf_reduce :
   (env -> evar_map -> constr -> constr) ->
   goal sigma -> constr -> constr
+val pf_e_reduce :
+  (env -> evar_map -> constr -> evar_map * constr) ->
+  goal sigma -> constr -> evar_map * constr
 
 val pf_whd_betadeltaiota       : goal sigma -> constr -> constr
 val pf_hnf_constr              : goal sigma -> constr -> constr
@@ -81,11 +84,8 @@ val pf_is_matching : goal sigma -> constr_pattern -> constr -> bool
 (** {6 The most primitive tactics. } *)
 
 val refiner                   : rule -> tactic
-val introduction_no_check     : Id.t -> tactic
 val internal_cut_no_check     : bool -> Id.t -> types -> tactic
 val refine_no_check           : constr -> tactic
-val convert_concl_no_check    : types -> cast_kind -> tactic
-val convert_hyp_no_check      : named_declaration -> tactic
 val thin_no_check             : Id.t list -> tactic
 val mutual_fix      :
   Id.t -> int -> (Id.t * int * constr) list -> int -> tactic
@@ -93,16 +93,11 @@ val mutual_cofix    : Id.t -> (Id.t * constr) list -> int -> tactic
 
 (** {6 The most primitive tactics with consistency and type checking } *)
 
-val introduction     : Id.t -> tactic
 val internal_cut     : bool -> Id.t -> types -> tactic
 val internal_cut_rev : bool -> Id.t -> types -> tactic
 val refine           : constr -> tactic
-val convert_concl    : types -> cast_kind -> tactic
-val convert_hyp      : named_declaration -> tactic
 val thin             : Id.t list -> tactic
-val thin_body        : Id.t list -> tactic
-val move_hyp         : bool -> Id.t -> Id.t move_location -> tactic
-val rename_hyp       : (Id.t*Id.t) list -> tactic
+val move_hyp         : Id.t -> Id.t move_location -> tactic
 
 (** {6 Pretty-printing functions (debug only). } *)
 val pr_gls    : goal sigma -> Pp.std_ppcmds
@@ -115,6 +110,7 @@ module New : sig
   val of_old : (Proof_type.goal Evd.sigma -> 'a) -> [ `NF ] Proofview.Goal.t -> 'a
 
   val pf_env : 'a Proofview.Goal.t -> Environ.env
+  val pf_concl : [ `NF ] Proofview.Goal.t -> types
 
   val pf_type_of : 'a Proofview.Goal.t -> Term.constr -> Term.types
   val pf_conv_x : 'a Proofview.Goal.t -> Term.constr -> Term.constr -> bool

@@ -1,12 +1,14 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
 type mode = [ `FIND | `REPLACE ]
+
+let b2c = Ideutils.byte_offset_to_char_offset
 
 class finder name (view : GText.view) =
   
@@ -61,8 +63,10 @@ class finder name (view : GText.view) =
     method replace () =
       if self#may_replace () then
         let txt = self#get_selected_word () in
+        let () = view#buffer#begin_user_action () in
         let _ = view#buffer#delete_selection () in
         let _ = view#buffer#insert_interactive (self#replacement txt) in
+        let () = view#buffer#end_user_action () in
         self#find_forward ()
       else self#find_forward ()
 
@@ -85,8 +89,8 @@ class finder name (view : GText.view) =
       try
         let i = Str.search_backward regexp text (String.length text - 1) in
         let j = Str.match_end () in
-        Some(view#buffer#start_iter#forward_chars i,
-             view#buffer#start_iter#forward_chars j)
+        Some(view#buffer#start_iter#forward_chars (b2c text i),
+             view#buffer#start_iter#forward_chars (b2c text j))
       with Not_found -> None
     
     method private forward_search starti =
@@ -95,7 +99,7 @@ class finder name (view : GText.view) =
       try
         let i = Str.search_forward regexp text 0 in
         let j = Str.match_end () in
-        Some(starti#forward_chars i, starti#forward_chars j)
+        Some(starti#forward_chars (b2c text i), starti#forward_chars (b2c text j))
       with Not_found -> None
 
     method replace_all () =
@@ -115,7 +119,9 @@ class finder name (view : GText.view) =
           let () = view#buffer#delete_mark (`MARK stop_mark) in
           replace_at next
       in
-      replace_at view#buffer#start_iter
+      let () = view#buffer#begin_user_action () in
+      let () = replace_at view#buffer#start_iter in
+      view#buffer#end_user_action ()
 
     method private set_not_found () =
       find_entry#misc#modify_base [`NORMAL, `NAME "#F7E6E6"];

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -55,7 +55,6 @@ let ldots_var = Id.of_string ".."
 let glob_constr_of_notation_constr_with_binders loc g f e = function
   | NVar id -> GVar (loc,id)
   | NApp (a,args) -> GApp (loc,f e a, List.map (f e) args)
-  | NProj (p,c) -> GProj (loc,p,f e c)
   | NList (x,y,iter,tail,swap) ->
       let t = f e tail in let it = f e iter in
       let innerl = (ldots_var,t)::(if swap then [] else [x,GVar(loc,y)]) in
@@ -105,7 +104,7 @@ let glob_constr_of_notation_constr_with_binders loc g f e = function
       GRec (loc,fk,idl,dll,Array.map (f e) tl,Array.map (f e') bl)
   | NCast (c,k) -> GCast (loc,f e c,Miscops.map_cast_type (f e) k)
   | NSort x -> GSort (loc,x)
-  | NHole (x, arg)  -> GHole (loc, x, arg)
+  | NHole (x, naming, arg)  -> GHole (loc, x, naming, arg)
   | NPatVar n -> GPatVar (loc,(false,n))
   | NRef x -> GRef (loc,x,None)
 
@@ -150,7 +149,6 @@ let compare_glob_constr f add t1 t2 = match t1,t2 with
   | GRef (_,r1,_), GRef (_,r2,_) -> eq_gr r1 r2
   | GVar (_,v1), GVar (_,v2) -> on_true_do (Id.equal v1 v2) add (Name v1)
   | GApp (_,f1,l1), GApp (_,f2,l2) -> f f1 f2 && List.for_all2eq f l1 l2
-  | GProj (_,p1,c1), GProj (_, p2, c2) -> eq_constant p1 p2 && f c1 c2
   | GLambda (_,na1,bk1,ty1,c1), GLambda (_,na2,bk2,ty2,c2)
     when Name.equal na1 na2 && Constrexpr_ops.binding_kind_eq bk1 bk2 ->
     on_true_do (f ty1 ty2 && f c1 c2) add na1
@@ -166,7 +164,7 @@ let compare_glob_constr f add t1 t2 = match t1,t2 with
   | _,(GCases _ | GRec _
       | GPatVar _ | GEvar _ | GLetTuple _ | GIf _ | GCast _)
       -> error "Unsupported construction in recursive notations."
-  | (GRef _ | GVar _ | GApp _ | GProj _ | GLambda _ | GProd _
+  | (GRef _ | GVar _ | GApp _ | GLambda _ | GProd _
     | GHole _ | GSort _ | GLetIn _), _
       -> false
 
@@ -261,7 +259,6 @@ let notation_constr_and_vars_of_glob_constr a =
   and aux' = function
   | GVar (_,id) -> add_id found id; NVar id
   | GApp (_,g,args) -> NApp (aux g, List.map aux args)
-  | GProj (_,p,c) -> NProj (p, aux c)
   | GLambda (_,na,bk,ty,c) -> add_name found na; NLambda (na,aux ty,aux c)
   | GProd (_,na,bk,ty,c) -> add_name found na; NProd (na,aux ty,aux c)
   | GLetIn (_,na,b,c) -> add_name found na; NLetIn (na,aux b,aux c)
@@ -290,7 +287,7 @@ let notation_constr_and_vars_of_glob_constr a =
       NRec (fk,idl,dll,Array.map aux tl,Array.map aux bl)
   | GCast (_,c,k) -> NCast (aux c,Miscops.map_cast_type aux k)
   | GSort (_,s) -> NSort s
-  | GHole (_,w,arg) -> NHole (w, arg)
+  | GHole (_,w,naming,arg) -> NHole (w, naming, arg)
   | GRef (_,r,_) -> NRef r
   | GPatVar (_,(_,n)) -> NPatVar n
   | GEvar _ ->
@@ -356,7 +353,7 @@ let notation_constr_of_glob_constr nenv a =
 (* Substitution of kernel names, avoiding a list of bound identifiers *)
 
 let notation_constr_of_constr avoiding t =
-  let t = Detyping.detype false avoiding [] t in
+  let t = Detyping.detype false avoiding (Global.env()) Evd.empty t in
   let nenv = {
     ninterp_var_type = Id.Map.empty;
     ninterp_rec_vars = Id.Map.empty;
@@ -387,12 +384,6 @@ let rec subst_notation_constr subst bound raw =
       and rl' = List.smartmap (subst_notation_constr subst bound) rl in
 	if r' == r && rl' == rl then raw else
 	  NApp(r',rl')
-
-  | NProj (p,c) ->
-      let p' = subst_constant subst p in
-      let c' = subst_notation_constr subst bound c in
-	if p == p' && c == c' then raw else
-	  NProj (p',c')
 
   | NList (id1,id2,r1,r2,b) ->
       let r1' = subst_notation_constr subst bound r1
@@ -474,7 +465,7 @@ let rec subst_notation_constr subst bound raw =
 
   | NPatVar _ | NSort _ -> raw
 
-  | NHole (knd, solve) ->
+  | NHole (knd, naming, solve) ->
     let nknd = match knd with
     | Evar_kinds.ImplicitArg (ref, i, b) ->
       let nref, _ = subst_global subst ref in
@@ -483,7 +474,7 @@ let rec subst_notation_constr subst bound raw =
     in
     let nsolve = Option.smartmap (Genintern.generic_substitute subst) solve in
     if nsolve == solve && nknd == knd then raw
-    else NHole (nknd, nsolve)
+    else NHole (nknd, naming, nsolve)
 
   | NCast (r1,k) ->
       let r1' = subst_notation_constr subst bound r1 in
@@ -507,11 +498,11 @@ let abstract_return_type_context pi mklam tml rtno =
 let abstract_return_type_context_glob_constr =
   abstract_return_type_context (fun (_,_,nal) -> nal)
     (fun na c ->
-      GLambda(Loc.ghost,na,Explicit,GHole(Loc.ghost,Evar_kinds.InternalHole,None),c))
+      GLambda(Loc.ghost,na,Explicit,GHole(Loc.ghost,Evar_kinds.InternalHole,Misctypes.IntroAnonymous,None),c))
 
 let abstract_return_type_context_notation_constr =
   abstract_return_type_context snd
-    (fun na c -> NLambda(na,NHole (Evar_kinds.InternalHole, None),c))
+    (fun na c -> NLambda(na,NHole (Evar_kinds.InternalHole, Misctypes.IntroAnonymous, None),c))
 
 exception No_match
 
@@ -564,7 +555,7 @@ let match_names metas (alp,sigma) na1 na2 = match (na1,na2) with
   | (_,Name id2) when Id.List.mem id2 (fst metas) ->
       let rhs = match na1 with
       | Name id1 -> GVar (Loc.ghost,id1)
-      | Anonymous -> GHole (Loc.ghost,Evar_kinds.InternalHole,None) in
+      | Anonymous -> GHole (Loc.ghost,Evar_kinds.InternalHole,Misctypes.IntroAnonymous,None) in
       alp, bind_env alp sigma id2 rhs
   | (Name id1,Name id2) -> (id1,id2)::alp,sigma
   | (Anonymous,Anonymous) -> alp,sigma
@@ -588,7 +579,7 @@ let rec match_iterated_binders islambda decls = function
       match_iterated_binders islambda ((na,bk,None,t)::decls) b
   | GLetIn (loc,na,c,b) when glue_letin_with_decls ->
       match_iterated_binders islambda
-	((na,Explicit (*?*), Some c,GHole(loc,Evar_kinds.BinderType na,None))::decls) b
+	((na,Explicit (*?*), Some c,GHole(loc,Evar_kinds.BinderType na,Misctypes.IntroAnonymous,None))::decls) b
   | b -> (decls,b)
 
 let remove_sigma x (sigmavar,sigmalist,sigmabinders) =
@@ -669,8 +660,6 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
   | GVar (_,id1), NVar id2 when alpha_var id1 id2 alp -> sigma
   | GRef (_,r1,_), NRef r2 when (eq_gr r1 r2) -> sigma
   | GPatVar (_,(_,n1)), NPatVar n2 when Id.equal n1 n2 -> sigma
-  | GProj (loc,f1,c1), NProj (f2,c2) when Constant.equal f1 f2 -> 
-     match_in u alp metas sigma c1 c2
   | GApp (loc,f1,l1), NApp (f2,l2) ->
       let n1 = List.length l1 and n2 = List.length l2 in
       let f1,l1,f2,l2 =
@@ -731,7 +720,7 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
       match_in u alp metas (match_in u alp metas sigma c1 c2) t1 t2
   | GCast(_,c1, CastCoerce), NCast(c2, CastCoerce) ->
       match_in u alp metas sigma c1 c2
-  | GSort (_,GType _), NSort (GType None) when not u -> sigma
+  | GSort (_,GType _), NSort (GType _) when not u -> sigma
   | GSort (_,s1), NSort s2 when Miscops.glob_sort_eq s1 s2 -> sigma
   | GPatVar _, NHole _ -> (*Don't hide Metas, they bind in ltac*) raise No_match
   | a, NHole _ -> sigma
@@ -744,7 +733,7 @@ let rec match_ inner u alp (tmetas,blmetas as metas) sigma a1 a2 =
      to print "{x:_ & P x}" knowing that notation "{x & P x}" is not defined. *)
   | b1, NLambda (Name id,(NHole _ | NVar _ as t2),b2) when inner ->
       let id' = Namegen.next_ident_away id (free_glob_vars b1) in
-      let t1 = GHole(Loc.ghost,Evar_kinds.BinderType (Name id'),None) in
+      let t1 = GHole(Loc.ghost,Evar_kinds.BinderType (Name id'),Misctypes.IntroAnonymous,None) in
       let sigma = match t2 with
       | NHole _ -> sigma
       | NVar id2 -> bind_env alp sigma id2 t1

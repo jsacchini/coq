@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -64,7 +64,10 @@ module type RedFlagsSig = sig
 
   (** Tests if a reduction kind is set *)
   val red_set : reds -> red_kind -> bool
-
+    
+  (** This tests if the projection is in unfolded state already or
+      is unfodable due to delta. *)
+  val red_projection : reds -> projection -> bool
 end
 
 module RedFlags : RedFlagsSig
@@ -113,10 +116,11 @@ type fterm =
   | FInd of inductive puniverses
   | FConstruct of constructor puniverses
   | FApp of fconstr * fconstr array
-  | FProj of constant * fconstr
+  | FProj of projection * fconstr
   | FFix of fixpoint * fconstr subs
   | FCoFix of cofixpoint * fconstr subs
-  | FCases of case_info * fconstr * fconstr * fconstr array
+  | FCase of case_info * fconstr * fconstr * fconstr array
+  | FCaseT of case_info * constr * fconstr * constr array * fconstr subs (* predicate and branches are closures *)
   | FLambda of int * (Name.t * constr) list * constr * fconstr subs
   | FProd of Name.t * fconstr * fconstr
   | FLetIn of Name.t * fconstr * fconstr * constr * fconstr subs
@@ -133,6 +137,7 @@ type fterm =
 type stack_member =
   | Zapp of fconstr array
   | Zcase of case_info * fconstr * fconstr array
+  | ZcaseT of case_info * constr * constr array * fconstr subs
   | Zproj of int * int * constant
   | Zfix of fconstr * stack
   | Zshift of int
@@ -172,6 +177,8 @@ val create_clos_infos :
   ?evars:(existential->constr option) -> reds -> env -> clos_infos
 val oracle_of_infos : clos_infos -> Conv_oracle.oracle
 
+val env_of_infos : clos_infos -> env
+
 val infos_with_reds : clos_infos -> reds -> clos_infos
 
 (** Reduction function *)
@@ -187,7 +194,7 @@ val whd_val : clos_infos -> fconstr -> constr
 val whd_stack :
   clos_infos -> fconstr -> stack -> fconstr * stack
 
-(** [eta_expand_ind_stacks env ind c s t] computes stacks correspoding 
+(** [eta_expand_ind_stack env ind c s t] computes stacks correspoding 
     to the conversion of the eta expansion of t, considered as an inhabitant 
     of ind, and the Constructor c of this inductive type applied to arguments
     s.
@@ -196,7 +203,7 @@ val whd_stack :
     @raises Not_found if the inductive is not a primitive record, or if the 
     constructor is partially applied.
  *)
-val eta_expand_ind_stacks : env -> inductive -> fconstr -> stack -> 
+val eta_expand_ind_stack : env -> inductive -> fconstr -> stack -> 
    (fconstr * stack) -> stack * stack
 
 (** Conversion auxiliary functions to do step by step normalisation *)
@@ -223,6 +230,5 @@ val knr: clos_infos -> fconstr -> stack -> fconstr * stack
 val kl : clos_infos -> fconstr -> constr
 
 val to_constr : (lift -> fconstr -> constr) -> lift -> fconstr -> constr
-val optimise_closure : fconstr subs -> constr -> fconstr subs * constr
 
 (** End of cbn debug section i*)

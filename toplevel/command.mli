@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -90,21 +90,21 @@ type one_inductive_impls =
 
 val interp_mutual_inductive :
   structured_inductive_expr -> decl_notation list -> polymorphic ->
-    private_flag -> bool(*finite*) ->
+    private_flag -> Decl_kinds.recursivity_kind ->
     mutual_inductive_entry * one_inductive_impls list
 
 (** Registering a mutual inductive definition together with its
    associated schemes *)
 
 val declare_mutual_inductive_with_eliminations :
-  Declare.internal_flag -> mutual_inductive_entry -> one_inductive_impls list ->
+  mutual_inductive_entry -> one_inductive_impls list ->
   mutual_inductive
 
 (** Entry points for the vernacular commands Inductive and CoInductive *)
 
 val do_mutual_inductive :
   (one_inductive_expr * decl_notation list) list -> polymorphic -> 
-  private_flag -> bool -> unit
+  private_flag -> Decl_kinds.recursivity_kind -> unit
 
 (** {6 Fixpoints and cofixpoints} *)
 
@@ -167,5 +167,5 @@ val do_cofixpoint :
 
 val check_mutuality : Environ.env -> bool -> (Id.t * types) list -> unit
 
-val declare_fix : definition_kind -> Univ.universe_context -> Id.t ->
+val declare_fix : ?opaque:bool -> definition_kind -> Univ.universe_context -> Id.t ->
   Entries.proof_output -> types -> Impargs.manual_implicits -> global_reference

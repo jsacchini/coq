@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -12,7 +12,7 @@ open Environ
 open Evd
 
 (** This module provides the typing machine with existential variables
-   (but without universes). *)
+    and universes. *)
 
 (** Typecheck a term and return its type *)
 val type_of : env -> evar_map -> constr -> types
@@ -22,10 +22,10 @@ val type_of : env -> evar_map -> constr -> types
 val e_type_of : ?refresh:bool -> env -> evar_map -> constr -> evar_map * types
 
 (** Typecheck a type and return its sort *)
-val sort_of : env -> evar_map -> types -> sorts
+val sort_of : env -> evar_map ref -> types -> sorts
 
 (** Typecheck a term has a given type (assuming the type is OK) *)
-val check   : env -> evar_map -> constr -> types -> unit
+val check   : env -> evar_map ref -> constr -> types -> unit
 
 (** Returns the instantiated type of a metavariable *)
 val meta_type : evar_map -> metavariable -> types

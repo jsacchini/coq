@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -46,9 +46,14 @@ val rel_context   : env -> rel_context
 val named_context : env -> named_context
 val named_context_val : env -> named_context_val
 
+val opaque_tables : env -> Opaqueproof.opaquetab
+val set_opaque_tables : env -> Opaqueproof.opaquetab -> env
+
 
 val engagement    : env -> engagement option
 val is_impredicative_set : env -> bool
+
+val type_in_type  : env -> bool
 
 (** is the local context empty *)
 val empty_context : env -> bool
@@ -60,7 +65,7 @@ val push_rel         : rel_declaration -> env -> env
 val push_rel_context :     rel_context -> env -> env
 val push_rec_types   : rec_declaration -> env -> env
 
-(** Looks up in the context of local vars referred by indice ([rel_context]) 
+(** Looks up in the context of local vars referred by indice ([rel_context])
    raises [Not_found] if the index points out of the context *)
 val lookup_rel    : int -> env -> rel_declaration
 val evaluable_rel : int -> env -> bool
@@ -91,7 +96,7 @@ val push_named_context_val  :
 
 
 
-(** Looks up in the context of local vars referred by names ([named_context]) 
+(** Looks up in the context of local vars referred by names ([named_context])
    raises [Not_found] if the Id.t is not found *)
 
 val lookup_named     : variable -> env -> named_declaration
@@ -122,10 +127,10 @@ val pop_rel_context : int -> env -> env
   {6 Add entries to global environment } *)
 
 val add_constant : constant -> constant_body -> env -> env
-val add_constant_key : constant -> constant_body -> Pre_env.link_info ref ->
+val add_constant_key : constant -> constant_body -> Pre_env.link_info ->
   env -> env
 
-(** Looks up in the context of global constant names 
+(** Looks up in the context of global constant names
    raises [Not_found] if the required path is not found *)
 val lookup_constant    : constant -> env -> constant_body
 val evaluable_constant : constant -> env -> bool
@@ -141,7 +146,7 @@ val template_polymorphic_pconstant : pconstant -> env -> bool
 (** {6 ... } *)
 (** [constant_value env c] raises [NotEvaluableConst Opaque] if
    [c] is opaque and [NotEvaluableConst NoBody] if it has no
-   body and [NotEvaluableConst IsProj] if [c] is a projection 
+   body and [NotEvaluableConst IsProj] if [c] is a projection
    and [Not_found] if it does not exist in [env] *)
 
 type const_evaluation_result = NoBody | Opaque | IsProj
@@ -151,14 +156,14 @@ val constant_value : env -> constant puniverses -> constr constrained
 val constant_type : env -> constant puniverses -> constant_type constrained
 
 val constant_opt_value : env -> constant puniverses -> (constr * Univ.constraints) option
-val constant_value_and_type : env -> constant puniverses -> 
+val constant_value_and_type : env -> constant puniverses ->
   constr option * constant_type * Univ.constraints
-(** The universe context associated to the constant, empty if not 
+(** The universe context associated to the constant, empty if not
     polymorphic *)
 val constant_context : env -> constant -> Univ.universe_context
 
-(* These functions should be called under the invariant that [env] 
-   already contains the constraints corresponding to the constant 
+(* These functions should be called under the invariant that [env]
+   already contains the constraints corresponding to the constant
    application. *)
 val constant_value_in : env -> constant puniverses -> constr
 val constant_type_in : env -> constant puniverses -> constant_type
@@ -173,7 +178,7 @@ val is_projection : constant -> env -> bool
 val add_mind_key : mutual_inductive -> Pre_env.mind_key -> env -> env
 val add_mind : mutual_inductive -> mutual_inductive_body -> env -> env
 
-(** Looks up in the context of global inductive names 
+(** Looks up in the context of global inductive names
    raises [Not_found] if the required path is not found *)
 val lookup_mind : mutual_inductive -> env -> mutual_inductive_body
 
@@ -210,10 +215,7 @@ val push_constraints_to_env : 'a Univ.constrained -> env -> env
 
 val set_engagement : engagement -> env -> env
 
-(** Termination checking *)
-val disable_termination_checking : env -> env
-val is_termination_checking : env -> bool
-
+val set_type_in_type : env -> env
 
 (** {6 Sets of referred section variables }
    [global_vars_set env c] returns the list of [id]'s occurring either
@@ -279,15 +281,13 @@ val remove_hyps : Id.Set.t -> (named_declaration -> named_declaration) -> (Pre_e
 
 
 open Retroknowledge
-(** functions manipulating the retroknowledge 
+(** functions manipulating the retroknowledge
     @author spiwack *)
 val retroknowledge : (retroknowledge->'a) -> env -> 'a
 
 val registered : env -> field -> bool
 
-val unregister : env -> field -> env
-
 val register : env -> field -> Retroknowledge.entry -> env
 
 (** Native compiler *)
-val no_link_info : unit -> Pre_env.link_info ref
+val no_link_info : Pre_env.link_info

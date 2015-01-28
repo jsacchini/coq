@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -77,8 +77,8 @@ let find_matches bas pat =
   List.map snd res
 
 let print_rewrite_hintdb bas =
-  (str "Database " ++ str bas ++ (Pp.cut ()) ++
-	   prlist_with_sep Pp.cut
+  (str "Database " ++ str bas ++ fnl () ++
+	   prlist_with_sep fnl
 	   (fun h ->
 	     str (if h.rew_l2r then "rewrite -> " else "rewrite <- ") ++
 	       Printer.pr_lconstr h.rew_lemma ++ str " of type " ++ Printer.pr_lconstr h.rew_type ++
@@ -91,12 +91,12 @@ type raw_rew_rule = Loc.t * constr Univ.in_universe_context_set * bool * raw_tac
 (* Applies all the rules of one base *)
 let one_base general_rewrite_maybe_in tac_main bas =
   let lrul = find_rewrites bas in
-  let try_rewrite dir ctx c tc = Proofview.Goal.enter (fun gl ->
+  let try_rewrite dir ctx c tc = Proofview.Goal.nf_enter (fun gl ->
     let subst, ctx' = Universes.fresh_universe_context_set_instance ctx in
     let c' = Vars.subst_univs_level_constr subst c in
     let sigma = Proofview.Goal.sigma gl in
     let sigma = Evd.merge_context_set Evd.univ_flexible sigma ctx' in
-    Tacticals.New.tclTHEN (Proofview.V82.tclEVARS sigma)
+    Tacticals.New.tclTHEN (Proofview.Unsafe.tclEVARS sigma)
       (general_rewrite_maybe_in dir c' tc)
   ) in
   let lrul = List.map (fun h -> 
@@ -120,7 +120,7 @@ let autorewrite ?(conds=Naive) tac_main lbas =
       (Proofview.tclUNIT()) lbas))
 
 let autorewrite_multi_in ?(conds=Naive) idl tac_main lbas =
- Proofview.Goal.enter begin fun gl ->
+ Proofview.Goal.nf_enter begin fun gl ->
  (* let's check at once if id exists (to raise the appropriate error) *)
  let _ = List.map (fun id -> Tacmach.New.pf_get_hyp id gl) idl in
  let general_rewrite_in id =
@@ -188,7 +188,7 @@ let gen_auto_multi_rewrite conds tac_main lbas cl =
 	   | None ->
 		 (* try to rewrite in all hypothesis
 		    (except maybe the rewritten one) *)
-               Proofview.Goal.enter begin fun gl ->
+               Proofview.Goal.nf_enter begin fun gl ->
                  let ids = Tacmach.New.pf_ids_of_hyps gl in
 		 try_do_hyps (fun id -> id)  ids
                end)
@@ -285,7 +285,7 @@ let find_applied_relation metas loc env sigma c left2right =
     | Some c -> c
     | None ->
 	user_err_loc (loc, "decompose_applied_relation",
-		     str"The type" ++ spc () ++ Printer.pr_constr_env env ctype ++
+		     str"The type" ++ spc () ++ Printer.pr_constr_env env sigma ctype ++
 		       spc () ++ str"of this term does not end with an applied relation.")
 
 (* To add rewriting rules to a base *)

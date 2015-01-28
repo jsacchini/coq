@@ -22,7 +22,8 @@ type env = {
     env_rel_context   : rel_context;
     env_stratification : stratification;
     env_imports : Cic.vodigest MPmap.t;
-    env_termination_checking : bool }
+}
+
 
 let empty_env = {
   env_globals =
@@ -36,7 +37,8 @@ let empty_env = {
   { env_universes = Univ.initial_universes;
     env_engagement = None};
   env_imports = MPmap.empty;
-  env_termination_checking = true }
+}
+
 
 let engagement env = env.env_stratification.env_engagement
 let universes env = env.env_stratification.env_universes
@@ -49,10 +51,6 @@ let set_engagement c env =
         { env with env_stratification =
           { env.env_stratification with env_engagement = Some c } }
 
-let disable_termination_checking env =
-  { env with env_termination_checking = false }
-
-let is_termination_checking env = env.env_termination_checking
 
 (* Digests *)
 
@@ -115,14 +113,13 @@ type const_evaluation_result = NoBody | Opaque
 
 (* Constant types *)
 
-let universes_and_subst_of cb u =
+let constraints_of cb u =
   let univs = cb.const_universes in
-  let subst = Univ.make_universe_subst u univs in
-    subst, Univ.instantiate_univ_context subst univs
+    Univ.subst_instance_constraints u (Univ.UContext.constraints univs)
 
 let map_regular_arity f = function
-  | RegularArity a as ar -> 
-    let a' = f a in 
+  | RegularArity a as ar ->
+    let a' = f a in
       if a' == a then ar else RegularArity a'
   | TemplateArity _ -> assert false
 
@@ -130,8 +127,8 @@ let map_regular_arity f = function
 let constant_type env (kn,u) =
   let cb = lookup_constant kn env in
     if cb.const_polymorphic then
-      let subst, csts = universes_and_subst_of cb u in
-	(map_regular_arity (subst_univs_level_constr subst) cb.const_type, csts)
+      let csts = constraints_of cb u in
+	(map_regular_arity (subst_instance_constr u) cb.const_type, csts)
     else cb.const_type, Univ.Constraint.empty
 
 exception NotEvaluableConst of const_evaluation_result
@@ -139,11 +136,10 @@ exception NotEvaluableConst of const_evaluation_result
 let constant_value env (kn,u) =
   let cb = lookup_constant kn env in
     match cb.const_body with
-    | Def l_body -> 
+    | Def l_body ->
       let b = force_constr l_body in
 	if cb.const_polymorphic then
-	  let subst = Univ.make_universe_subst u cb.const_universes in
-	    subst_univs_level_constr subst b
+	  subst_instance_constr u (force_constr l_body)
 	else b
     | OpaqueDef _ -> raise (NotEvaluableConst Opaque)
     | Undef _ -> raise (NotEvaluableConst NoBody)
@@ -153,11 +149,11 @@ let evaluable_constant cst env =
   try let _  = constant_value env (cst, Univ.Instance.empty) in true
   with Not_found | NotEvaluableConst _ -> false
 
-let is_projection cst env = 
+let is_projection cst env =
   not (Option.is_empty (lookup_constant cst env).const_proj)
 
 let lookup_projection cst env =
-  match (lookup_constant cst env).const_proj with 
+  match (lookup_constant cst env).const_proj with
   | Some pb -> pb
   | None -> anomaly ("lookup_projection: constant is not a projection")
 
@@ -165,7 +161,7 @@ let lookup_projection cst env =
 let scrape_mind env kn=
   try
     KNmap.find kn env.env_globals.env_inductives_eq
-  with 
+  with
       Not_found -> kn
 
 let mind_equiv env (kn1,i1) (kn2,i2) =

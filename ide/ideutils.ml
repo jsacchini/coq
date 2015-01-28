@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -60,9 +60,6 @@ let byte_offset_to_char_offset s byte_offset =
   byte_offset - !extra_bytes
 
 let glib_utf8_pos_to_offset s ~off = byte_offset_to_char_offset s off
-
-let print_id id =
-  Minilib.log ("GOT sig id :"^(string_of_int (Obj.magic id)))
 
 let do_convert s =
   let from_loc () =
@@ -385,7 +382,7 @@ let url_for_keyword =
         let cin =
           try let index_urls = Filename.concat (List.find
             (fun x -> Sys.file_exists (Filename.concat x "index_urls.txt"))
-            (Minilib.coqide_config_dirs ())) "index_urls.txt" in
+            (Minilib.coqide_data_dirs ())) "index_urls.txt" in
             open_in index_urls
           with Not_found ->
             let doc_url = doc_url () in

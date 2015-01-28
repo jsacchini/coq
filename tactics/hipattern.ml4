@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -15,7 +15,7 @@ open Names
 open Term
 open Termops
 open Inductiveops
-open ConstrMatching
+open Constr_matching
 open Coqlib
 open Declarations
 open Tacmach.New
@@ -48,7 +48,7 @@ let match_with_non_recursive_type t =
         let (hdapp,args) = decompose_app t in
         (match kind_of_term hdapp with
            | Ind (ind,u) ->
-               if not (Global.lookup_mind (fst ind)).mind_finite then
+               if (Global.lookup_mind (fst ind)).mind_finite == Decl_kinds.CoFinite then
 		 Some (hdapp,args)
 	       else
 		 None
@@ -159,7 +159,7 @@ let match_with_disjunction ?(strict=false) ?(onlybinary=false) t =
   let (hdapp,args) = decompose_app t in
   let res = match kind_of_term hdapp with
   | Ind (ind,u)  ->
-      let car = mis_constr_nargs ind in
+      let car = constructors_nrealargs ind in
       let (mib,mip) = Global.lookup_inductive ind in
       if Array.for_all (fun ar -> Int.equal ar 1) car
 	&& not (mis_is_recursive (ind,mib,mip))
@@ -245,6 +245,9 @@ let coq_refl_jm_pattern       = PATTERN [ forall A:_, forall x:A, _ A x A x ]
 
 open Globnames
 
+let is_matching x y = is_matching (Global.env ()) Evd.empty x y
+let matches x y = matches (Global.env ()) Evd.empty x y
+
 let match_with_equation t =
   if not (isApp t) then raise NoEquationFound;
   let (hdapp,args) = destApp t in
@@ -274,10 +277,15 @@ let match_with_equation t =
         else raise NoEquationFound
     | _ -> raise NoEquationFound
 
+(* Note: An "equality type" is any type with a single argument-free
+   constructor: it captures eq, eq_dep, JMeq, eq_true, etc. but also
+   True/unit which is the degenerate equality type (isomorphic to ()=());
+   in particular, True/unit are provable by "reflexivity" *)
+
 let is_inductive_equality ind =
   let (mib,mip) = Global.lookup_inductive ind in
   let nconstr = Array.length mip.mind_consnames in
-  Int.equal nconstr 1 && Int.equal (constructor_nrealargs (Global.env()) (ind,1)) 0
+  Int.equal nconstr 1 && Int.equal (constructor_nrealargs (ind,1)) 0
 
 let match_with_equality_type t =
   let (hdapp,args) = decompose_app t in
@@ -286,6 +294,8 @@ let match_with_equality_type t =
   | _ -> None
 
 let is_equality_type t = op2bool (match_with_equality_type t)
+
+(* Arrows/Implication/Negation *)
 
 let coq_arrow_pattern = PATTERN [ ?X1 -> ?X2 ]
 
@@ -296,6 +306,13 @@ let match_arrow_pattern t =
       assert (Id.equal m1 meta1 && Id.equal m2 meta2); (arg, mind)
     | _ -> anomaly (Pp.str "Incorrect pattern matching")
 
+let match_with_imp_term c=
+  match kind_of_term c with
+    | Prod (_,a,b) when not (dependent (mkRel 1) b) ->Some (a,b)
+    | _              -> None
+
+let is_imp_term c = op2bool (match_with_imp_term c)
+
 let match_with_nottype t =
   try
     let (arg,mind) = match_arrow_pattern t in
@@ -304,19 +321,14 @@ let match_with_nottype t =
 
 let is_nottype t = op2bool (match_with_nottype t)
 
+(* Forall *)
+
 let match_with_forall_term c=
   match kind_of_term c with
     | Prod (nam,a,b) -> Some (nam,a,b)
     | _            -> None
 
 let is_forall_term c = op2bool (match_with_forall_term c)
-
-let match_with_imp_term c=
-  match kind_of_term c with
-    | Prod (_,a,b) when not (dependent (mkRel 1) b) ->Some (a,b)
-    | _              -> None
-
-let is_imp_term c = op2bool (match_with_imp_term c)
 
 let match_with_nodep_ind t =
   let (hdapp,args) = decompose_app t in

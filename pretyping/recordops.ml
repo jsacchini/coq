@@ -1,12 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* Created by Amokrane Saïbi, Dec 1998 *)
+(* Created by Amokrane SaÃ¯bi, Dec 1998 *)
 (* Addition of products and sorts in canonical structures by Pierre
    Corbineau, Feb 2008 *)
 
@@ -28,10 +28,10 @@ open Reductionops
    constructor (the name of which defaults to Build_S) *)
 
 (* Table des structures: le nom de la structure (un [inductive]) donne
-   le nom du constructeur, le nombre de paramètres et pour chaque
-   argument réel du constructeur, le nom de la projection
-   correspondante, si valide, et un booléen disant si c'est une vraie
-   projection ou bien une fonction constante (associée à un LetIn) *)
+   le nom du constructeur, le nombre de paramÃ¨tres et pour chaque
+   argument rÃ©el du constructeur, le nom de la projection
+   correspondante, si valide, et un boolÃ©en disant si c'est une vraie
+   projection ou bien une fonction constante (associÃ©e Ã  un LetIn) *)
 
 type struc_typ = {
   s_CONST : constructor;
@@ -114,16 +114,18 @@ let find_projection = function
 
   c := [x1:B1]...[xk:Bk](Build_R a1...am t1...t_n)
 
-  If ti has the form (ci ui1...uir) where ci is a global reference and
-if the corresponding projection Li of the structure R is defined, one
-declare a "conversion" between ci and Li
+  If ti has the form (ci ui1...uir) where ci is a global reference (or
+  a sort, or a product or a reference to a parameter) and if the 
+  corresponding projection Li of the structure R is defined, one
+  declares a "conversion" between ci and Li.
 
     x1:B1..xk:Bk |- (Li a1..am (c x1..xk)) =_conv (ci ui1...uir)
 
-that maps the pair (Li,ci) to the following data
+  that maps the pair (Li,ci) to the following data
 
     o_DEF = c
     o_TABS = B1...Bk
+    o_INJ = Some n        (when ci is a reference to the parameter xi)
     o_PARAMS = a1...am
     o_NARAMS = m
     o_TCOMP = ui1...uir
@@ -133,7 +135,7 @@ that maps the pair (Li,ci) to the following data
 type obj_typ = {
   o_DEF : constr;
   o_CTX : Univ.ContextSet.t;
-  o_INJ : int;      (* position of trivial argument (negative= none) *)
+  o_INJ : int option;      (* position of trivial argument if any *)
   o_TABS : constr list;    (* ordered *)
   o_TPARAMS : constr list; (* ordered *)
   o_NPARAMS : int;
@@ -173,15 +175,15 @@ let cs_pattern_of_constr t =
   match kind_of_term t with
       App (f,vargs) ->
 	begin
-	  try Const_cs (global_of_constr f) , -1, Array.to_list vargs
+	  try Const_cs (global_of_constr f) , None, Array.to_list vargs
           with e when Errors.noncritical e -> raise Not_found
 	end
-    | Rel n -> Default_cs, pred n, []
-    | Prod (_,a,b) when not (Termops.dependent (mkRel 1) b) -> Prod_cs, -1, [a; Termops.pop b]
-    | Sort s -> Sort_cs (family_of_sort s), -1, []
+    | Rel n -> Default_cs, Some n, []
+    | Prod (_,a,b) when not (Termops.dependent (mkRel 1) b) -> Prod_cs, None, [a; Termops.pop b]
+    | Sort s -> Sort_cs (family_of_sort s), None, []
     | _ ->
 	begin
-	  try Const_cs (global_of_constr t) , -1, []
+	  try Const_cs (global_of_constr t) , None, []
           with e when Errors.noncritical e -> raise Not_found
 	end
 
@@ -307,9 +309,6 @@ let declare_canonical_structure ref =
 
 let lookup_canonical_conversion (proj,pat) =
   assoc_pat pat (Refmap.find proj !object_table)
-
-  (* let cst, u' = destConst cs.o_DEF in *)
-  (*   { cs with o_DEF = mkConstU (cst, u) } *)
 
 let is_open_canonical_projection env sigma (c,args) =
   try

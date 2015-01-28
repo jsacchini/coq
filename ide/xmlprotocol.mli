@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -31,6 +31,8 @@ val init        : init_sty        -> init_rty call
 val stop_worker : stop_worker_sty -> stop_worker_rty call
 (* retrocompatibility *)
 val interp      : interp_sty      -> interp_rty call
+val print_ast   : print_ast_sty   -> print_ast_rty call
+val annotate    : annotate_sty    -> annotate_rty call
 
 val abstract_eval_call : handler -> 'a call -> 'a value
 

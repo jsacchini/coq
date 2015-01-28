@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -187,7 +187,7 @@ let assumptions ?(add_opaque=false) ?(add_transparent=false) st (* t *) =
        a "Let" definition, in the former it is an assumption of [t],
        in the latter is must be unfolded like a Const.
     The other cases are straightforward recursion.
-    Calls to the environment are memoized, thus avoiding to explore
+    Calls to the environment are memoized, thus avoiding exploration of
     the DAG of the environment as if it was a tree (can cause
     exponential behavior and prevent the algorithm from terminating
     in reasonable time). [s] is a set of [context_object], representing
@@ -236,7 +236,7 @@ let assumptions ?(add_opaque=false) ?(add_transparent=false) st (* t *) =
           else (s, acc)
       else (s, acc)
     in
-      match Declareops.body_of_constant cb with
+      match Global.body_of_constant_body cb with
       | None -> do_type (Axiom kn)
       | Some body -> do_constr body s acc
 

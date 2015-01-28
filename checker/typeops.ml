@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -224,8 +224,7 @@ let judge_of_projection env p c ct =
     with Not_found -> error_case_not_inductive env (c, ct)
   in
     assert(eq_mind pb.proj_ind (fst ind));
-    let usubst = make_inductive_subst (fst (lookup_mind_specif env ind)) u in
-    let ty = subst_univs_level_constr usubst pb.proj_type in
+    let ty = subst_instance_constr u pb.proj_type in
       substl (c :: List.rev args) ty
 
 (* Fixpoints. *)
@@ -392,8 +391,9 @@ let check_ctxt env rels =
 (* Polymorphic arities utils *)
 
 let check_kind env ar u =
-  if snd (dest_prod env ar) = Sort(Type u) then ()
-  else failwith "not the correct sort"
+  match (snd (dest_prod env ar)) with
+  | Sort (Type u') when Univ.Universe.equal u' (Univ.Universe.make u) -> ()
+  | _ -> failwith "not the correct sort"
 
 let check_polymorphic_arity env params par =
   let pl = par.template_param_levels in

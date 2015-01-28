@@ -18,17 +18,12 @@ type env = {
   env_rel_context : rel_context;
   env_stratification : stratification;
   env_imports : Cic.vodigest MPmap.t;
-  env_termination_checking : bool;
 }
 val empty_env : env
 
 (* Engagement *)
 val engagement : env -> Cic.engagement option
 val set_engagement : Cic.engagement -> env -> env
-
-(* Termination checking *)
-val disable_termination_checking : env -> env
-val is_termination_checking : env -> bool
 
 (* Digests *)
 val add_digest : env -> DirPath.t -> Cic.vodigest -> env

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -67,10 +67,10 @@ let with_context_set ctx (b, ctx') =
   (b, Univ.ContextSet.union ctx ctx')
 
 let build_dependent_inductive ind (mib,mip) =
-  let realargs,_ = List.chop mip.mind_nrealargs_ctxt mip.mind_arity_ctxt in
+  let realargs,_ = List.chop mip.mind_nrealdecls mip.mind_arity_ctxt in
   applist
     (mkIndU ind,
-       extended_rel_list mip.mind_nrealargs_ctxt mib.mind_params_ctxt
+       extended_rel_list mip.mind_nrealdecls mib.mind_params_ctxt
        @ extended_rel_list 0 realargs)
 
 let my_it_mkLambda_or_LetIn s c = it_mkLambda_or_LetIn c s
@@ -102,9 +102,8 @@ let get_sym_eq_data env (ind,u) =
   if not (Int.equal (Array.length mib.mind_packets) 1) ||
     not (Int.equal (Array.length mip.mind_nf_lc) 1) then
     error "Not an inductive type with a single constructor.";
-  let subst = Inductive.make_inductive_subst mib u in
-  let arityctxt = Vars.subst_univs_level_context subst mip.mind_arity_ctxt in
-  let realsign,_ = List.chop mip.mind_nrealargs_ctxt arityctxt in
+  let arityctxt = Vars.subst_instance_context u mip.mind_arity_ctxt in
+  let realsign,_ = List.chop mip.mind_nrealdecls arityctxt in
   if List.exists (fun (_,b,_) -> not (Option.is_empty b)) realsign then
     error "Inductive equalities with local definitions in arity not supported.";
   let constrsign,ccl = decompose_prod_assum mip.mind_nf_lc.(0) in
@@ -115,7 +114,7 @@ let get_sym_eq_data env (ind,u) =
   if mip.mind_nrealargs > mib.mind_nparams then
     error "Constructors arguments must repeat the parameters.";
   let _,params2 = List.chop (mib.mind_nparams-mip.mind_nrealargs) params in
-  let paramsctxt = Vars.subst_univs_level_context subst mib.mind_params_ctxt in
+  let paramsctxt = Vars.subst_instance_context u mib.mind_params_ctxt in
   let paramsctxt1,_ =
     List.chop (mib.mind_nparams-mip.mind_nrealargs) paramsctxt in
   if not (List.equal eq_constr params2 constrargs) then
@@ -138,9 +137,8 @@ let get_non_sym_eq_data env (ind,u) =
   if not (Int.equal (Array.length mib.mind_packets) 1) ||
     not (Int.equal (Array.length mip.mind_nf_lc) 1) then
     error "Not an inductive type with a single constructor.";
-  let subst = Inductive.make_inductive_subst mib u in
-  let arityctxt = Vars.subst_univs_level_context subst mip.mind_arity_ctxt in
-  let realsign,_ = List.chop mip.mind_nrealargs_ctxt arityctxt in
+  let arityctxt = Vars.subst_instance_context u mip.mind_arity_ctxt in
+  let realsign,_ = List.chop mip.mind_nrealdecls arityctxt in
   if List.exists (fun (_,b,_) -> not (Option.is_empty b)) realsign then
     error "Inductive equalities with local definitions in arity not supported";
   let constrsign,ccl = decompose_prod_assum mip.mind_nf_lc.(0) in
@@ -148,8 +146,8 @@ let get_non_sym_eq_data env (ind,u) =
   if not (Int.equal (rel_context_length constrsign) (rel_context_length mib.mind_params_ctxt)) then
     error "Constructor must have no arguments";
   let _,constrargs = List.chop mib.mind_nparams constrargs in
-  let constrargs = List.map (Vars.subst_univs_level_constr subst) constrargs in
-  let paramsctxt = Vars.subst_univs_level_context subst mib.mind_params_ctxt in
+  let constrargs = List.map (Vars.subst_instance_constr u) constrargs in
+  let paramsctxt = Vars.subst_instance_context u mib.mind_params_ctxt in
   (specif,constrargs,realsign,paramsctxt,mip.mind_nrealargs)
 
 (**********************************************************************)
@@ -729,15 +727,14 @@ let build_congr env (eq,refl,ctx) ind =
   let (ind,u as indu), ctx = with_context_set ctx 
     (Universes.fresh_inductive_instance env ind) in
   let (mib,mip) = lookup_mind_specif env ind in
-  let subst = Inductive.make_inductive_subst mib u in
   if not (Int.equal (Array.length mib.mind_packets) 1) || not (Int.equal (Array.length mip.mind_nf_lc) 1) then
     error "Not an inductive type with a single constructor.";
   if not (Int.equal mip.mind_nrealargs 1) then
     error "Expect an inductive type with one predicate parameter.";
   let i = 1 in
-  let arityctxt = Vars.subst_univs_level_context subst mip.mind_arity_ctxt in
-  let paramsctxt = Vars.subst_univs_level_context subst mib.mind_params_ctxt in
-  let realsign,_ = List.chop mip.mind_nrealargs_ctxt arityctxt in
+  let arityctxt = Vars.subst_instance_context u mip.mind_arity_ctxt in
+  let paramsctxt = Vars.subst_instance_context u mib.mind_params_ctxt in
+  let realsign,_ = List.chop mip.mind_nrealdecls arityctxt in
   if List.exists (fun (_,b,_) -> not (Option.is_empty b)) realsign then
     error "Inductive equalities with local definitions in arity not supported.";
   let env_with_arity = push_rel_context arityctxt env in
@@ -769,12 +766,12 @@ let build_congr env (eq,refl,ctx) ind =
            (Anonymous,
             applist
              (mkIndU indu,
-	        extended_rel_list (2*mip.mind_nrealargs_ctxt+3)
+	        extended_rel_list (2*mip.mind_nrealdecls+3)
 		  paramsctxt
 	        @ extended_rel_list 0 realsign),
             mkApp (eq,
 	      [|mkVar varB;
-                mkApp (mkVar varf, [|lift (2*mip.mind_nrealargs_ctxt+4) b|]);
+                mkApp (mkVar varf, [|lift (2*mip.mind_nrealdecls+4) b|]);
 		mkApp (mkVar varf, [|mkRel (mip.mind_nrealargs - i + 2)|])|]))),
        mkVar varH,
        [|mkApp (refl,

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -448,6 +448,14 @@ Proof.
       unfold dicho_lb in Hrecn; assumption.
     + rewrite  Heq.
       assumption.
+Qed.
+
+(* A general purpose corollary. *)
+Lemma cv_pow_half : forall a, Un_cv (fun n => a/2^n) 0.
+intros a; unfold Rdiv; replace 0 with (a * 0) by ring.
+apply CV_mult.
+ intros eps ep; exists 0%nat; rewrite R_dist_eq; intros n _; assumption.
+exact (cv_infty_cv_R0 pow_2_n pow_2_n_neq_R0 pow_2_n_infty).
 Qed.
 
 (** Intermediate Value Theorem *)

@@ -52,8 +52,11 @@
 #install_printer  (* 'a scheme_kind *) ppscheme;;
 #install_printer  (* type_judgement *) pptype;;
 #install_printer  (* judgement *) ppj;;
+#install_printer  (* id set *) ppidset;;
+#install_printer  (* int set *) ppintset;;
 
-#install_printer  (* judgement *) pp_cst_stack_t;;
+#install_printer  (* Reductionops stcak of unfolded constants *) pp_cst_stack_t;;
+#install_printer  (* Reductionops machine stack *) pp_stack_t;;
 
 (*#install_printer  (* hint_db *)  print_hint_db;;*)
 (*#install_printer  (* hints_path *)  pphintspath;;*)
@@ -61,12 +64,15 @@
 (*#install_printer  (* sigma goal *)  ppsigmagoal;;*)
 (*#install_printer  (* proof *)  pproof;;*)
 #install_printer  (* Goal.goal *)  ppgoalgoal;;
+#install_printer  (* proofview *)  ppproofview;;
 #install_printer  (* metaset.t *) ppmetas;;
 #install_printer  (* evar *)  ppevar;;
 #install_printer  (* evar_map *)  ppevm;;
 #install_printer  (* Evar.Set.t *) ppexistentialset;;
 #install_printer  (* clenv *) ppclenv;;
 #install_printer  (* env *) ppenv;;
+#install_printer  (* Hint_db.t *) pphintdb;;
+#install_printer  (* named_context_val *) ppnamedcontextval;;
 
 #install_printer  (* tactic *) pptac;;
 #install_printer  (* object *) ppobj;;

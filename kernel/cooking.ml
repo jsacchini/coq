@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -123,12 +123,13 @@ let expmod_constr cache modlist c =
 
       | Proj (p, c') ->
           (try 
-	     let p' = share_univs (ConstRef p) Univ.Instance.empty modlist in
+	     let p' = share_univs (ConstRef (Projection.constant p)) Univ.Instance.empty modlist in
+	     let make c = Projection.make c (Projection.unfolded p) in
 	     match kind_of_term p' with
-	     | Const (p',_) -> mkProj (p', substrec c')
+	     | Const (p',_) -> mkProj (make p', substrec c')
 	     | App (f, args) -> 
 	       (match kind_of_term f with 
-	       | Const (p', _) -> mkProj (p', substrec c')
+	       | Const (p', _) -> mkProj (make p', substrec c')
 	       | _ -> assert false)
 	     | _ -> assert false
 	   with Not_found -> map_constr substrec c)
@@ -160,23 +161,43 @@ let on_body ml hy f = function
     OpaqueDef (Opaqueproof.discharge_direct_opaque ~cook_constr:f
                  { Opaqueproof.modlist = ml; abstract = hy } o)
 
-let constr_of_def = function
+let constr_of_def otab = function
   | Undef _ -> assert false
   | Def cs -> Mod_subst.force_constr cs
-  | OpaqueDef lc -> Opaqueproof.force_proof lc
+  | OpaqueDef lc -> Opaqueproof.force_proof otab lc
 
+let expmod_constr_subst cache modlist subst c =
+  let c = expmod_constr cache modlist c in
+    Vars.subst_univs_level_constr subst c
 
 let cook_constr { Opaqueproof.modlist ; abstract } c =
   let cache = RefTable.create 13 in
-  let hyps = Context.map_named_context (expmod_constr cache modlist) (fst abstract) in
-  abstract_constant_body (expmod_constr cache modlist c) hyps
+  let expmod = expmod_constr_subst cache modlist (pi2 abstract) in
+  let hyps = Context.map_named_context expmod (pi1 abstract) in
+  abstract_constant_body (expmod c) hyps
 
-let cook_constant env { from = cb; info = { Opaqueproof.modlist; abstract } } =
+let lift_univs cb subst =
+  if cb.const_polymorphic && not (Univ.LMap.is_empty subst) then
+    let inst = Univ.UContext.instance cb.const_universes in
+    let cstrs = Univ.UContext.constraints cb.const_universes in
+    let len = Univ.LMap.cardinal subst in
+    let subst = 
+      Array.fold_left_i (fun i acc v -> Univ.LMap.add (Level.var i) (Level.var (i + len)) acc)
+	subst (Univ.Instance.to_array inst)
+    in
+    let cstrs' = Univ.subst_univs_level_constraints subst cstrs in
+      subst, Univ.UContext.make (inst,cstrs')
+  else subst, cb.const_universes
+
+let cook_constant env { from = cb; info } =
+  let { Opaqueproof.modlist; abstract } = info in
   let cache = RefTable.create 13 in
-  let abstract, abs_ctx = abstract in 
-  let hyps = Context.map_named_context (expmod_constr cache modlist) abstract in
-  let body = on_body modlist (hyps, abs_ctx)
-    (fun c -> abstract_constant_body (expmod_constr cache modlist c) hyps)
+  let abstract, usubst, abs_ctx = abstract in
+  let usubst, univs = lift_univs cb usubst in
+  let expmod = expmod_constr_subst cache modlist usubst in
+  let hyps = Context.map_named_context expmod abstract in
+  let body = on_body modlist (hyps, usubst, abs_ctx)
+    (fun c -> abstract_constant_body (expmod c) hyps)
     cb.const_body
   in
   let const_hyps =
@@ -186,17 +207,18 @@ let cook_constant env { from = cb; info = { Opaqueproof.modlist; abstract } } =
   let typ = match cb.const_type with
     | RegularArity t ->
   	let typ =
-          abstract_constant_type (expmod_constr cache modlist t) hyps in
+          abstract_constant_type (expmod t) hyps in
   	RegularArity typ
     | TemplateArity (ctx,s) ->
   	let t = mkArity (ctx,Type s.template_level) in
-  	let typ =
-          abstract_constant_type (expmod_constr cache modlist t) hyps in
-  	let j = make_judge (constr_of_def body) typ in
+  	let typ = abstract_constant_type (expmod t) hyps in
+  	let j = make_judge (constr_of_def (opaque_tables env) body) typ in
   	Typeops.make_polymorphic_if_constant_for_ind env j
   in
   let projection pb =
-    let c' = abstract_constant_body (expmod_constr cache modlist pb.proj_body) hyps in
+    let c' = abstract_constant_body (expmod pb.proj_body) hyps in
+    let etab = abstract_constant_body (expmod (fst pb.proj_eta)) hyps in
+    let etat = abstract_constant_body (expmod (snd pb.proj_eta)) hyps in
     let ((mind, _), _), n' =
       try 
 	let c' = share_univs cache (IndRef (pb.proj_ind,0)) Univ.Instance.empty modlist in
@@ -211,9 +233,16 @@ let cook_constant env { from = cb; info = { Opaqueproof.modlist; abstract } } =
     in
     let ctx, ty' = decompose_prod_n (n' + pb.proj_npars + 1) typ in
       { proj_ind = mind; proj_npars = pb.proj_npars + n'; proj_arg = pb.proj_arg;
+	proj_eta = etab, etat;
 	proj_type = ty'; proj_body = c' }
   in
-  let univs = UContext.union abs_ctx cb.const_universes in
+  let univs = 
+    let abs' = 
+      if cb.const_polymorphic then abs_ctx
+      else instantiate_univ_context abs_ctx
+    in
+      UContext.union abs' univs
+  in
     (body, typ, Option.map projection cb.const_proj, 
      cb.const_polymorphic, univs, cb.const_inline_code, 
      Some const_hyps)

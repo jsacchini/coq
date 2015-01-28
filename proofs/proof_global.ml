@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -149,12 +149,14 @@ let with_current_proof f =
         match p.endline_tactic with
         | None -> Proofview.tclUNIT ()
         | Some tac -> !interp_tac tac in
-      let (newpr,status) = f et p.proof in
+      let (newpr,ret) = f et p.proof in
       let p = { p with proof = newpr } in
       pstates := p :: rest;
-      status
-let simple_with_current_proof f =
-  ignore (with_current_proof (fun t p -> f t p , true))
+      ret
+let simple_with_current_proof f = with_current_proof (fun t p -> f t p , ())
+
+let compact_the_proof () = simple_with_current_proof (fun _ -> Proof.compact)
+
 
 (* Sets the tactic to be used when a tactic line is closed with [...] *)
 let set_endline_tactic tac =
@@ -257,7 +259,8 @@ let set_used_variables l =
   | p :: rest ->
       if not (Option.is_empty p.section_vars) then
         Errors.error "Used section variables can be declared only once";
-      pstates := { p with section_vars = Some ctx} :: rest
+      pstates := { p with section_vars = Some ctx} :: rest;
+      ctx
 
 let get_open_goals () =
   let gl, gll, shelf , _ , _ = Proof.proof (cur_pstate ()).proof in
@@ -266,7 +269,7 @@ let get_open_goals () =
     (List.map (fun (l1,l2) -> List.length l1 + List.length l2) gll) +
     List.length shelf
 
-let close_proof ?feedback_id ~now fpl =
+let close_proof ~keep_body_ucst_sepatate ?feedback_id ~now fpl =
   let { pid; section_vars; strength; proof; terminator } = cur_pstate () in
   let poly = pi2 strength (* Polymorphic *) in
   let initial_goals = Proof.initial_goals proof in
@@ -278,29 +281,43 @@ let close_proof ?feedback_id ~now fpl =
   (* Because of dependent subgoals at the begining of proofs, we could
      have existential variables in the initial types of goals, we need to
      normalise them for the kernel. *)
-  let subst_evar k = Proof.in_proof proof (fun m -> Evd.existential_opt_value m k) in
+  let subst_evar k =
+    Proof.in_proof proof (fun m -> Evd.existential_opt_value m k) in
   let nf = Universes.nf_evars_and_universes_opt_subst subst_evar
     (Evd.evar_universe_context_subst universes) in
   let make_body =
     if poly || now then
-      let make_body t ((c, _ctx), eff) =
+      let make_body t (c, eff) =
+        let open Universes in
 	let body = c and typ = nf t in
-	let used_univs = 
-	  Univ.LSet.union (Universes.universes_of_constr body)
-	  (Universes.universes_of_constr typ)
-	in
+        let used_univs_body = Universes.universes_of_constr body in
+	let used_univs_typ = Universes.universes_of_constr typ in
 	let ctx = Evd.evar_universe_context_set universes in
-	let ctx = Universes.restrict_universe_context ctx used_univs in
-	let univs = Univ.ContextSet.to_context ctx in
-	let p = (body, Univ.ContextSet.empty), eff in
-	  (univs, typ), p
+        if keep_body_ucst_sepatate then
+          (* For vi2vo compilation proofs are computed now but we need to
+           * completent the univ constraints of the typ with the ones of
+           * the body.  So we keep the two sets distinct. *)
+          let ctx_body = restrict_universe_context ctx used_univs_body in
+          let ctx_typ = restrict_universe_context ctx used_univs_typ in
+          let univs_typ = Univ.ContextSet.to_context ctx_typ in
+          (univs_typ, typ), ((body, ctx_body), eff)
+        else
+          (* Since the proof is computed now, we can simply have 1 set of
+           * constraints in which we merge the ones for the body and the ones
+           * for the typ *)
+          let used_univs = Univ.LSet.union used_univs_body used_univs_typ in
+          let ctx = restrict_universe_context ctx used_univs in
+          let univs = Univ.ContextSet.to_context ctx in
+          (univs, typ), ((body, Univ.ContextSet.empty), eff)
       in 
 	fun t p ->
 	  Future.split2 (Future.chain ~pure:true p (make_body t))
     else
-      let univs = Evd.evar_context_universe_context universes in
-	fun t p ->
-	  Future.from_val (univs, nf t), p  
+      fun t p ->
+        let initunivs = Evd.evar_context_universe_context universes in
+	  Future.from_val (initunivs, nf t), 
+	  Future.chain ~pure:true p (fun (pt,eff) ->
+	    (pt, Evd.evar_universe_context_set (Future.force univs)), eff)
   in
   let entries =
     Future.map2 (fun p (_, t) ->
@@ -314,16 +331,15 @@ let close_proof ?feedback_id ~now fpl =
 	  const_entry_inline_code = false;
 	  const_entry_opaque = true;
 	  const_entry_universes = univs;
-	  const_entry_polymorphic = poly;
-	  const_entry_proj = false})
+	  const_entry_polymorphic = poly})
       fpl initial_goals in
   { id = pid; entries = entries; persistence = strength; universes = universes },
-  Ephemeron.get terminator
+  fun pr_ending -> Ephemeron.get terminator pr_ending
 
-type closed_proof_output = Entries.proof_output list * Evd.evar_universe_context
+type closed_proof_output = (Term.constr * Declareops.side_effects) list * Evd.evar_universe_context
 
 let return_proof () =
-  let { proof } = cur_pstate () in
+  let { proof; strength = (_,poly,_) } = cur_pstate () in
   let initial_goals = Proof.initial_goals proof in
   let evd =
     let error s = raise (Errors.UserError("last tactic before Qed",s)) in
@@ -338,18 +354,22 @@ let return_proof () =
         error(str"Attempt to save a proof with existential " ++
               str"variables still non-instantiated") in
   let eff = Evd.eval_side_effects evd in
-  let evd = Evd.nf_constraints evd in
+  let evd =
+    if poly || !Flags.compilation_mode = Flags.BuildVo
+    then Evd.nf_constraints evd
+    else evd in
   (** ppedrot: FIXME, this is surely wrong. There is no reason to duplicate
       side-effects... This may explain why one need to uniquize side-effects
       thereafter... *)
   let proofs = 
-    List.map (fun (c, _) -> ((Evarutil.nf_evars_universes evd c, Univ.ContextSet.empty), eff)) initial_goals in
+    List.map (fun (c, _) -> (Evarutil.nf_evars_universes evd c, eff)) initial_goals in
     proofs, Evd.evar_universe_context evd
 
 let close_future_proof ~feedback_id proof =
-  close_proof ~feedback_id ~now:false proof
-let close_proof fix_exn =
-  close_proof ~now:true (Future.from_val ~fix_exn (return_proof ()))
+  close_proof ~keep_body_ucst_sepatate:true ~feedback_id ~now:false proof
+let close_proof ~keep_body_ucst_sepatate fix_exn =
+  close_proof ~keep_body_ucst_sepatate ~now:true
+    (Future.from_val ~fix_exn (return_proof ()))
 
 (** Gets the current terminator without checking that the proof has
     been completed. Useful for the likes of [Admitted]. *)
@@ -373,14 +393,22 @@ module Bullet = struct
   type t = Vernacexpr.bullet
 
   let bullet_eq b1 b2 = match b1, b2 with
-  | Vernacexpr.Dash, Vernacexpr.Dash -> true
-  | Vernacexpr.Star, Vernacexpr.Star -> true
-  | Vernacexpr.Plus, Vernacexpr.Plus -> true
+  | Vernacexpr.Dash n1, Vernacexpr.Dash n2 -> n1 = n2
+  | Vernacexpr.Star n1, Vernacexpr.Star n2 -> n1 = n2
+  | Vernacexpr.Plus n1, Vernacexpr.Plus n2 -> n1 = n2
   | _ -> false
+
+  let pr_bullet b =
+    match b with
+    | Vernacexpr.Dash n -> str (String.make n '-')
+    | Vernacexpr.Star n -> str (String.make n '*')
+    | Vernacexpr.Plus n -> str (String.make n '+')
+
 
   type behavior = {
     name : string;
-    put : Proof.proof -> t -> Proof.proof
+    put : Proof.proof -> t -> Proof.proof;
+    suggest: Proof.proof -> string option
   }
 
   let behaviors = Hashtbl.create 4
@@ -389,11 +417,55 @@ module Bullet = struct
   (*** initial modes ***)
   let none = {
     name = "None";
-    put = fun x _ -> x
+    put = (fun x _ -> x);
+    suggest = (fun _ -> None)
   }
   let _ = register_behavior none
 
   module Strict = struct
+    type suggestion =
+    | Suggest of t (* this bullet is mandatory here *)
+    | Unfinished of t (* no mandatory bullet here, but this bullet is unfinished *)
+    | NoBulletInUse (* No mandatory bullet (or brace) here, no bullet pending,
+		       some focused goals exists. *)
+    | NeedClosingBrace (* Some unfocussed goal exists "{" needed to focus them *)
+    | ProofFinished (* No more goal anywhere *)
+
+    (* give a message only if more informative than the standard coq message *)
+    let suggest_on_solved_goal sugg =
+      match sugg with
+      | NeedClosingBrace -> Some "Try unfocusing with \"}\"."
+      | NoBulletInUse -> None
+      | ProofFinished -> None
+      | Suggest b -> Some ("Focus next goal with bullet "
+			   ^ Pp.string_of_ppcmds (Pp.(pr_bullet b))
+			   ^".")
+      | Unfinished b -> Some ("The current bullet "
+			      ^ Pp.string_of_ppcmds (Pp.(pr_bullet b))
+			      ^ " is unfinished.")
+
+    (* give always a message. *)
+    let suggest_on_error sugg =
+      match sugg with
+      | NeedClosingBrace -> "Try unfocusing with \"}\"."
+      | NoBulletInUse -> assert false (* This should never raise an error. *)
+      | ProofFinished -> "No more subgoals."
+      | Suggest b -> ("Bullet " ^ Pp.string_of_ppcmds (Pp.(pr_bullet b))
+		      ^ " is mandatory here.")
+      | Unfinished b -> ("Current bullet " ^ Pp.string_of_ppcmds (Pp.(pr_bullet b))
+			 ^ " is not finished.")
+
+    exception FailedBullet of t * suggestion
+
+    let _ =
+      Errors.register_handler
+	(function
+	| FailedBullet (b,sugg) ->
+	  let prefix = "Wrong bullet " ^ Pp.string_of_ppcmds (Pp.(pr_bullet b)) ^ " : " in
+	  Errors.errorlabstrm "Focus" (str prefix ++ str (suggest_on_error sugg))
+	| _ -> raise Errors.Unhandled)
+
+
     (* spiwack: we need only one focus kind as we keep a stack of (distinct!) bullets *)
     let bullet_kind = (Proof.new_focus_kind () : t list Proof.focus_kind)
     let bullet_cond = Proof.done_cond ~loose_end:true bullet_kind
@@ -415,29 +487,75 @@ module Bullet = struct
       in
       has_bullet (get_bullets pr)
 
-    (* precondition: the stack is not empty *)
+    (* pop a bullet from proof [pr]. There should be at least one
+       bullet in use. If pop impossible (pending proofs on this level
+       of bullet or higher) then raise [Proof.CannotUnfocusThisWay]. *)
     let pop pr =
       match get_bullets pr with
-      | b::_ ->
-         let pr = Proof.unfocus bullet_kind pr () in
-         pr, b
+      | b::_ -> Proof.unfocus bullet_kind pr () , b
       | _ -> assert false
 
-    let push b pr =
+    let push (b:t) pr =
       Proof.focus bullet_cond (b::get_bullets pr) 1 pr
 
+    (* Used only in the next function.
+       TODO: use a recursive function instead? *)
+    exception SuggestFound of t
+
+    let suggest_bullet (prf:Proof.proof): suggestion =
+      if Proof.is_done prf then ProofFinished
+      else if not (Proof.no_focused_goal prf)
+      then (* No suggestion if a bullet is not mandatory, look for an unfinished bullet *)
+	match get_bullets prf with
+	| b::_ -> Unfinished b
+	| _ -> NoBulletInUse
+      else (* There is no goal under focus but some are unfocussed,
+	      let us look at the bullet needed. If no  *)
+	let pcobaye = ref prf in
+	try
+	  while true do
+	    let pcobaye', b = pop !pcobaye in
+	   (* pop went well, this means that there are no more goals
+	    *under this* bullet b, see if a new b can be pushed. *)
+	    (try let _ = push b pcobaye' in (* push didn't fail so a new b can be pushed. *)
+		 raise (SuggestFound b)
+	     with SuggestFound _ as e -> raise e
+	     | _ -> ()); (* b could not be pushed, so we must look for a outer bullet *)
+	    pcobaye := pcobaye'
+	  done;
+	  assert false
+	with SuggestFound b -> Suggest b
+	| _ -> NeedClosingBrace (* No push was possible, but there are still
+				   subgoals somewhere: there must be a "}" to use. *)
+
+
+    let rec pop_until (prf:Proof.proof) bul: Proof.proof =
+      let prf', b = pop prf in
+      if bullet_eq bul b then prf'
+      else pop_until prf' bul
+
     let put p bul =
-      if has_bullet bul p then
-        let rec aux p =
-          let p, b = pop p in
-          if not (bullet_eq bul b) then aux p else p in
-        push bul (aux p)
-      else
-	push bul p
+      try
+	if not (has_bullet bul p) then
+	  (* bullet is not in use, so pushing it is always ok unless
+	     no goal under focus. *)
+	  push bul p
+	else
+	  match suggest_bullet p with
+	  | Suggest suggested_bullet when bullet_eq bul suggested_bullet
+	      -> (* suggested_bullet is mandatory and you gave the right one *)
+	    let p' = pop_until p bul in
+	    push bul p'
+	(* the bullet you gave is in use but not the right one *)
+	  | sugg -> raise (FailedBullet (bul,sugg))
+      with Proof.NoSuchGoals _ -> (* push went bad *)
+	raise (FailedBullet (bul,suggest_bullet p))
 
     let strict = {
       name = "Strict Subproofs";
-      put = put
+      put = put;
+      suggest = (fun prf -> suggest_on_solved_goal (suggest_bullet prf))
+
     }
     let _ = register_behavior strict
   end
@@ -461,7 +579,17 @@ module Bullet = struct
 
   let put p b =
     (!current_behavior).put p b
+
+  let suggest p =
+    (!current_behavior).suggest p
 end
+
+
+let _ =
+  let hook n =
+    let prf = give_me_the_proof () in
+    (Bullet.suggest prf) in
+  Proofview.set_nosuchgoals_hook hook
 
 
 (**********************************************************)
@@ -479,6 +607,8 @@ let get_default_goal_selector () = !default_goal_selector
 let print_goal_selector = function
   | Vernacexpr.SelectAll -> "all"
   | Vernacexpr.SelectNth i -> string_of_int i
+  | Vernacexpr.SelectId id -> Id.to_string id
+  | Vernacexpr.SelectAllParallel -> "par"
 
 let parse_goal_selector = function
   | "all" -> Vernacexpr.SelectAll

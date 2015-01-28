@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -63,9 +63,9 @@ let cast_type_eq eq t1 t2 = match t1, t2 with
 let rec glob_constr_eq c1 c2 = match c1, c2 with
 | GRef (_, gr1, _), GRef (_, gr2, _) -> eq_gr gr1 gr2
 | GVar (_, id1), GVar (_, id2) -> Id.equal id1 id2
-| GEvar (_, ev1, arg1), GEvar (_, ev2, arg2) ->
-  Evar.equal ev1 ev2 &&
-  Option.equal (fun l1 l2 -> List.equal glob_constr_eq l1 l2) arg1 arg2
+| GEvar (_, id1, arg1), GEvar (_, id2, arg2) ->
+  Id.equal id1 id2 &&
+  List.equal instance_eq arg1 arg2
 | GPatVar (_, (b1, pat1)), GPatVar (_, (b2, pat2)) ->
   (b1 : bool) == b2 && Id.equal pat1 pat2
 | GApp (_, f1, arg1), GApp (_, f2, arg2) ->
@@ -96,8 +96,9 @@ let rec glob_constr_eq c1 c2 = match c1, c2 with
   Array.equal glob_constr_eq c1 c2 &&
   Array.equal glob_constr_eq t1 t2
 | GSort (_, s1), GSort (_, s2) -> Miscops.glob_sort_eq s1 s2
-| GHole (_, kn1, gn1), GHole (_, kn2, gn2) ->
-  Option.equal (==) gn1 gn2 (** Only thing sensible *)
+| GHole (_, kn1, nam1, gn1), GHole (_, kn2, nam2, gn2) ->
+  Option.equal (==) gn1 gn2 (** Only thing sensible *) &&
+  Miscops.intro_pattern_naming_eq nam1 nam2
 | GCast (_, c1, t1), GCast (_, c2, t2) ->
   glob_constr_eq c1 c2 && cast_type_eq glob_constr_eq t1 t2
 | _ -> false
@@ -134,6 +135,9 @@ and fix_recursion_order_eq o1 o2 = match o1, o2 with
   glob_constr_eq c1 c2 && Option.equal glob_constr_eq o1 o2
 | _ -> false
 
+and instance_eq (x1,c1) (x2,c2) =
+  Id.equal x1 x2 && glob_constr_eq c1 c2
+
 let map_glob_constr_left_to_right f = function
   | GApp (loc,g,args) ->
       let comp1 = f g in
@@ -156,9 +160,6 @@ let map_glob_constr_left_to_right f = function
       let comp2 = Util.List.map_left (fun (tm,x) -> (f tm,x)) tml in
       let comp3 = Util.List.map_left (fun (loc,idl,p,c) -> (loc,idl,p,f c)) pl in
       GCases (loc,sty,comp1,comp2,comp3)
-  | GProj (loc,p,c) -> 
-      let comp1 = f c in
-      GProj (loc,p,comp1)
   | GLetTuple (loc,nal,(na,po),b,c) ->
       let comp1 = Option.map f po in
       let comp2 = f b in
@@ -186,7 +187,6 @@ let fold_glob_constr f acc =
   let rec fold acc = function
   | GVar _ -> acc
   | GApp (_,c,args) -> List.fold_left fold (fold acc c) args
-  | GProj (_,p,c) -> fold acc c
   | GLambda (_,_,_,b,c) | GProd (_,_,_,b,c) | GLetIn (_,_,b,c) ->
       fold (fold acc b) c
   | GCases (_,_,rtntypopt,tml,pl) ->
@@ -225,7 +225,6 @@ let occur_glob_constr id =
   let rec occur = function
     | GVar (loc,id') -> Id.equal id id'
     | GApp (loc,f,args) -> (occur f) || (List.exists occur args)
-    | GProj (loc,p,c) -> occur c
     | GLambda (loc,na,bk,ty,c) ->
       (occur ty) || (not (same_id na id) && (occur c))
     | GProd (loc,na,bk,ty,c) ->
@@ -275,7 +274,6 @@ let free_glob_vars  =
   let rec vars bounded vs = function
     | GVar (loc,id') -> if Id.Set.mem id' bounded then vs else Id.Set.add id' vs
     | GApp (loc,f,args) -> List.fold_left (vars bounded) vs (f::args)
-    | GProj (loc,p,c) -> vars bounded vs c
     | GLambda (loc,na,_,ty,c) | GProd (loc,na,_,ty,c) | GLetIn (loc,na,ty,c) ->
 	let vs' = vars bounded vs ty in
 	let bounded' = add_name_to_ids bounded na in
@@ -330,6 +328,60 @@ let free_glob_vars  =
     let vs = vars Id.Set.empty Id.Set.empty rt in
     Id.Set.elements vs
 
+(** Mapping of names in binders *)
+
+(* spiwack: I used a smartmap-style kind of mapping here, because the
+   operation will be the identity almost all of the time (with any
+   term outside of Ltac to begin with). But to be honest, there would
+   probably be no significant penalty in doing reallocation as
+   pattern-matching expressions are usually rather small. *)
+
+let map_inpattern_binders f ((loc,id,nal) as x) =
+  let r = CList.smartmap f nal in
+  if r == nal then x
+  else loc,id,r
+
+let map_tomatch_binders f ((c,(na,inp)) as x) : tomatch_tuple =
+  let r = Option.smartmap (fun p -> map_inpattern_binders f p) inp in
+  if r == inp then x
+  else c,(f na, r)
+
+let rec map_case_pattern_binders f = function
+  | PatVar (loc,na) as x ->
+      let r = f na in
+      if r == na then x
+      else PatVar (loc,r)
+  | PatCstr (loc,c,ps,na) as x ->
+      let rna = f na in
+      let rps =
+        CList.smartmap (fun p -> map_case_pattern_binders f p) ps
+      in
+      if rna == na && rps == ps then x
+      else PatCstr(loc,c,rps,rna)
+
+let map_cases_branch_binders f ((loc,il,cll,rhs) as x) : cases_clause =
+  (* spiwack: not sure if I must do something with the list of idents.
+     It is intended to be a superset of the free variable of the
+     right-hand side, if I understand correctly. But I'm not sure when
+     or how they are used. *)
+  let r = List.smartmap (fun cl -> map_case_pattern_binders f cl) cll in
+  if r == cll then x
+  else loc,il,r,rhs
+
+let map_pattern_binders f tomatch branches =
+  CList.smartmap (fun tm -> map_tomatch_binders f tm) tomatch,
+  CList.smartmap (fun br -> map_cases_branch_binders f br) branches
+
+(** /mapping of names in binders *)
+
+let map_tomatch f (c,pp) : tomatch_tuple = f c , pp
+
+let map_cases_branch f (loc,il,cll,rhs) : cases_clause =
+  loc , il , cll , f rhs
+
+let map_pattern f tomatch branches =
+  List.map (fun tm -> map_tomatch f tm) tomatch,
+  List.map (fun br -> map_cases_branch f br) branches
 
 let loc_of_glob_constr = function
   | GRef (loc,_,_) -> loc
@@ -337,7 +389,6 @@ let loc_of_glob_constr = function
   | GEvar (loc,_,_) -> loc
   | GPatVar (loc,_) -> loc
   | GApp (loc,_,_) -> loc
-  | GProj (loc,p,c) -> loc
   | GLambda (loc,_,_,_,_) -> loc
   | GProd (loc,_,_,_,_) -> loc
   | GLetIn (loc,_,_,_) -> loc
@@ -346,7 +397,7 @@ let loc_of_glob_constr = function
   | GIf (loc,_,_,_,_) -> loc
   | GRec (loc,_,_,_,_,_) -> loc
   | GSort (loc,_) -> loc
-  | GHole (loc,_,_) -> loc
+  | GHole (loc,_,_,_) -> loc
   | GCast (loc,_,_) -> loc
 
 (**********************************************************************)
@@ -360,7 +411,7 @@ let rec cases_pattern_of_glob_constr na = function
       raise Not_found
     | Anonymous -> PatVar (loc,Name id)
     end
-  | GHole (loc,_,_) -> PatVar (loc,na)
+  | GHole (loc,_,_,_) -> PatVar (loc,na)
   | GRef (loc,ConstructRef cstr,_) ->
       PatCstr (loc,cstr,[],na)
   | GApp (loc,GRef (_,ConstructRef cstr,_),l) ->

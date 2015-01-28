@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -37,27 +37,44 @@ let hcons_template_arity ar =
 
 (** {6 Constants } *)
 
-let body_of_constant cb = match cb.const_body with
-  | Undef _ -> None
-  | Def c -> Some (force_constr c)
-  | OpaqueDef o -> Some (Opaqueproof.force_proof o)
+let instantiate cb c =
+  if cb.const_polymorphic then 
+    Vars.subst_instance_constr (Univ.UContext.instance cb.const_universes) c
+  else c
 
-let constraints_of_constant cb = Univ.Constraint.union 
+let body_of_constant otab cb = match cb.const_body with
+  | Undef _ -> None
+  | Def c -> Some (instantiate cb (force_constr c))
+  | OpaqueDef o -> Some (instantiate cb (Opaqueproof.force_proof otab o))
+
+let type_of_constant cb =
+  match cb.const_type with
+  | RegularArity t as x -> 
+    let t' = instantiate cb t in
+      if t' == t then x else RegularArity t'
+  | TemplateArity _ as x -> x
+
+let constraints_of_constant otab cb = Univ.Constraint.union 
   (Univ.UContext.constraints cb.const_universes)
   (match cb.const_body with
   | Undef _ -> Univ.empty_constraint
   | Def c -> Univ.empty_constraint
-  | OpaqueDef o -> Univ.ContextSet.constraints (Opaqueproof.force_constraints o))
+  | OpaqueDef o ->
+      Univ.ContextSet.constraints (Opaqueproof.force_constraints otab o))
 
-let universes_of_constant cb = 
+let universes_of_constant otab cb = 
   match cb.const_body with
   | Undef _ | Def _ -> cb.const_universes
   | OpaqueDef o -> 
-    Univ.UContext.union cb.const_universes 
-      (Univ.ContextSet.to_context (Opaqueproof.force_constraints o))
+      let body_uctxs = Opaqueproof.force_constraints otab o in
+      assert(not cb.const_polymorphic || Univ.ContextSet.is_empty body_uctxs);
+      let uctxs = Univ.ContextSet.of_context cb.const_universes in
+      Univ.ContextSet.to_context (Univ.ContextSet.union body_uctxs uctxs) 
 
-let universes_of_polymorphic_constant cb = 
-  if cb.const_polymorphic then universes_of_constant cb
+let universes_of_polymorphic_constant otab cb = 
+  if cb.const_polymorphic then 
+    let univs = universes_of_constant otab cb in
+      Univ.instantiate_univ_context univs
   else Univ.UContext.empty
 
 let constant_has_body cb = match cb.const_body with
@@ -216,15 +233,21 @@ let subst_mind_packet sub mbp =
     mind_arity = subst_ind_arity sub mbp.mind_arity;
     mind_user_lc = Array.smartmap (subst_mps sub) mbp.mind_user_lc;
     mind_nrealargs = mbp.mind_nrealargs;
-    mind_nrealargs_ctxt = mbp.mind_nrealargs_ctxt;
+    mind_nrealdecls = mbp.mind_nrealdecls;
     mind_kelim = mbp.mind_kelim;
     mind_recargs = subst_wf_paths sub mbp.mind_recargs (*wf_paths*);
     mind_nb_constant = mbp.mind_nb_constant;
     mind_nb_args = mbp.mind_nb_args;
     mind_reloc_tbl = mbp.mind_reloc_tbl }
 
+let subst_mind_record sub (id, ps, pb as r) =
+  let ps' = Array.smartmap (subst_constant sub) ps in
+  let pb' = Array.smartmap (subst_const_proj sub) pb in
+    if ps' == ps && pb' == pb then r
+    else (id, ps', pb')
+
 let subst_mind_body sub mib =
-  { mind_record = mib.mind_record ;
+  { mind_record = Option.smartmap (Option.smartmap (subst_mind_record sub)) mib.mind_record ;
     mind_finite = mib.mind_finite ;
     mind_ntypes = mib.mind_ntypes ;
     mind_hyps = (match mib.mind_hyps with [] -> [] | _ -> assert false);
@@ -236,6 +259,16 @@ let subst_mind_body sub mib =
     mind_polymorphic = mib.mind_polymorphic;
     mind_universes = mib.mind_universes;
     mind_private = mib.mind_private }
+
+let inductive_instance mib =
+  if mib.mind_polymorphic then
+    Univ.UContext.instance mib.mind_universes
+  else Univ.Instance.empty
+
+let inductive_context mib =
+  if mib.mind_polymorphic then 
+    Univ.instantiate_univ_context mib.mind_universes 
+  else Univ.UContext.empty
 
 (** {6 Hash-consing of inductive declarations } *)
 
@@ -271,15 +304,10 @@ let hcons_mind mib =
 
 (** {6 Stm machinery } *)
 
-let join_constant_body cb =
-  match cb.const_body with
-  | OpaqueDef o -> Opaqueproof.join_opaque o
-  | _ -> ()
-
 let string_of_side_effect = function
-  | SEsubproof (c,_) -> Names.string_of_con c
+  | SEsubproof (c,_,_) -> Names.string_of_con c
   | SEscheme (cl,_) ->
-      String.concat ", " (List.map (fun (_,c,_) -> Names.string_of_con c) cl)
+      String.concat ", " (List.map (fun (_,c,_,_) -> Names.string_of_con c) cl)
 type side_effects = side_effect list
 let no_seff = ([] : side_effects)
 let iter_side_effects f l = List.iter f (List.rev l)

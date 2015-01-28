@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -450,7 +450,7 @@ let gen_mult_files l =
       if (!header_trailer) then Output.trailer ();
       close_out_file()
     end
-      (* Rq: pour latex et texmacs, une toc ou un index séparé n'a pas de sens... *)
+    (* NB: for latex and texmacs, a separated toc or index is meaningless... *)
 
 let read_glob_file vfile f =
   try Index.read_glob vfile f

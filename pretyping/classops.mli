@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -19,7 +19,7 @@ type cl_typ =
   | CL_SECVAR of variable
   | CL_CONST of constant
   | CL_IND of inductive
-  | CL_PROJ of projection
+  | CL_PROJ of constant
 
 (** Equality over [cl_typ] *)
 val cl_typ_eq : cl_typ -> cl_typ -> bool
@@ -88,7 +88,7 @@ val lookup_path_to_fun_from : env -> evar_map -> types ->
 val lookup_path_to_sort_from : env -> evar_map -> types ->
       types * inheritance_path
 val lookup_pattern_path_between :
-  inductive * inductive -> (constructor * int) list
+  env -> inductive * inductive -> (constructor * int) list
 
 (**/**)
 (* Crade *)

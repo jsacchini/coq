@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -47,7 +47,7 @@ let optimize_non_type_induction_scheme kind dep sort ind =
       (nf c', Evd.evar_universe_context sigma), eff
   else
     let mib,mip = Inductive.lookup_mind_specif env ind in
-    let ctx = if mib.mind_polymorphic then mib.mind_universes else Univ.UContext.empty in
+    let ctx = Declareops.inductive_context mib in
     let u = Univ.UContext.instance ctx in
     let ctxset = Univ.ContextSet.of_context ctx in
     let ectx = Evd.evar_universe_context_of ctxset in
@@ -58,7 +58,7 @@ let build_induction_scheme_in_type dep sort ind =
   let env = Global.env () in
   let ctx = 
     let mib,mip = Inductive.lookup_mind_specif env ind in
-      Inductive.inductive_context mib
+      Declareops.inductive_context mib
   in
   let u = Univ.UContext.instance ctx in
   let ctxset = Univ.ContextSet.of_context ctx in

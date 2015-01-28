@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -20,6 +20,8 @@ open Environ
 open Evd
 open Reductionops
 open Pretype_errors
+
+(** Combinators *)
 
 let evd_comb0 f evdref =
   let (evd',x) = f !evdref in
@@ -126,7 +128,12 @@ let nf_evar_map_undefined evm =
 (* Auxiliary functions for the conversion algorithms modulo evars
  *)
 
-let has_undefined_evars or_sorts evd t =
+(* A probably faster though more approximative variant of
+   [has_undefined (nf_evar c)]: instances are not substituted and
+   maybe an evar occurs in an instance and it would disappear by
+   instantiation *)
+
+let has_undefined_evars evd t =
   let rec has_ev t =
     match kind_of_term t with
     | Evar (ev,args) ->
@@ -140,7 +147,7 @@ let has_undefined_evars or_sorts evd t =
   with (Not_found | NotInstantiatedEvar) -> true
 
 let is_ground_term evd t =
-  not (has_undefined_evars true evd t)
+  not (has_undefined_evars evd t)
 
 let is_ground_env evd env =
   let is_ground_decl = function
@@ -342,40 +349,59 @@ let push_rel_context_to_named_context env typ =
 
 let default_source = (Loc.ghost,Evar_kinds.InternalHole)
 
+let restrict_evar evd evk filter candidates =
+  let evk' = new_untyped_evar () in
+  let evd = Evd.restrict evk evk' filter ?candidates evd in
+  Evd.declare_future_goal evk' evd, evk'
+
 let new_pure_evar_full evd evi =
   let evk = new_untyped_evar () in
   let evd = Evd.add evd evk evi in
+  let evd = Evd.declare_future_goal evk evd in
   (evd, evk)
 
-let new_pure_evar evd sign ?(src=default_source) ?filter ?candidates ?store typ =
+let new_pure_evar sign evd ?(src=default_source) ?filter ?candidates ?store ?naming ?(principal=false) typ =
+  let default_naming =
+    if principal then
+        (* waiting for a more principled approach
+           (unnamed evars, private names?) *)
+        Misctypes.IntroFresh (Names.Id.of_string "tmp_goal")
+      else
+        Misctypes.IntroAnonymous
+  in
+  let naming = Option.default default_naming naming in
   let newevk = new_untyped_evar() in
-  let evd = evar_declare sign newevk typ ~src ?filter ?candidates ?store evd in
+  let evd = evar_declare sign newevk typ ~src ?filter ?candidates ?store ~naming evd in
+  let evd =
+    if principal then Evd.declare_principal_goal newevk evd
+    else Evd.declare_future_goal newevk evd
+  in
   (evd,newevk)
 
-let new_evar_instance sign evd typ ?src ?filter ?candidates ?store instance =
+let new_evar_instance sign evd typ ?src ?filter ?candidates ?store ?naming ?principal instance =
   assert (not !Flags.debug ||
             List.distinct (ids_of_named_context (named_context_of_val sign)));
-  let evd,newevk = new_pure_evar evd sign ?src ?filter ?candidates ?store typ in
+  let evd,newevk = new_pure_evar sign evd ?src ?filter ?candidates ?store ?naming ?principal typ in
   (evd,mkEvar (newevk,Array.of_list instance))
 
 (* [new_evar] declares a new existential in an env env with type typ *)
 (* Converting the env into the sign of the evar to define *)
-let new_evar evd env ?src ?filter ?candidates ?store typ =
+let new_evar env evd ?src ?filter ?candidates ?store ?naming ?principal typ =
   let sign,typ',instance,subst,vsubst = push_rel_context_to_named_context env typ in
   let candidates = Option.map (List.map (subst2 subst vsubst)) candidates in
   let instance =
     match filter with
     | None -> instance
     | Some filter -> Filter.filter_list filter instance in
-  new_evar_instance sign evd typ' ?src ?filter ?candidates ?store instance
+  new_evar_instance sign evd typ' ?src ?filter ?candidates ?store ?naming ?principal instance
 
-let new_type_evar ?src ?filter rigid evd env =
+let new_type_evar env evd ?src ?filter ?naming ?principal rigid =
   let evd', s = new_sort_variable rigid evd in
-  let evd', e = new_evar evd' env ?src ?filter (mkSort s) in
+  let evd', e = new_evar env evd' ?src ?filter ?naming ?principal (mkSort s) in
     evd', (e, s)
 
-let e_new_type_evar evdref ?src ?filter rigid env =
-  let evd', c = new_type_evar ?src ?filter rigid !evdref env in
+let e_new_type_evar env evdref ?src ?filter ?naming ?principal rigid =
+  let evd', c = new_type_evar env !evdref ?src ?filter ?naming ?principal rigid in
     evdref := evd';
     c
 
@@ -388,8 +414,8 @@ let e_new_Type ?(rigid=Evd.univ_flexible) env evdref =
     evdref := evd'; mkSort s
 
   (* The same using side-effect *)
-let e_new_evar evdref env ?(src=default_source) ?filter ?candidates ?store ty =
-  let (evd',ev) = new_evar !evdref env ~src:src ?filter ?candidates ?store ty in
+let e_new_evar env evdref ?(src=default_source) ?filter ?candidates ?store ?naming ?principal ty =
+  let (evd',ev) = new_evar env !evdref ~src:src ?filter ?candidates ?store ?naming ?principal ty in
   evdref := evd';
   ev
 
@@ -417,7 +443,7 @@ let cleared = Store.field ()
 
 exception Depends of Id.t
 
-let rec check_and_clear_in_constr evdref err ids c =
+let rec check_and_clear_in_constr env evdref err ids c =
   (* returns a new constr where all the evars have been 'cleaned'
      (ie the hypotheses ids have been removed from the contexts of
      evars) *)
@@ -430,14 +456,14 @@ let rec check_and_clear_in_constr evdref err ids c =
 	  check id'; c
 
       | ( Const _ | Ind _ | Construct _ ) ->
-          let vars = Environ.vars_of_global (Global.env()) c in
+          let vars = Environ.vars_of_global env c in
             Id.Set.iter check vars; c
 
       | Evar (evk,l as ev) ->
 	  if Evd.is_defined !evdref evk then
 	    (* If evk is already defined we replace it by its definition *)
 	    let nc = whd_evar !evdref c in
-	      (check_and_clear_in_constr evdref err ids nc)
+	      (check_and_clear_in_constr env evdref err ids nc)
 	  else
 	    (* We check for dependencies to elements of ids in the
 	       evar_info corresponding to e and in the instance of
@@ -446,9 +472,9 @@ let rec check_and_clear_in_constr evdref err ids c =
 	       removed *)
 	    let evi = Evd.find_undefined !evdref evk in
 	    let ctxt = Evd.evar_filtered_context evi in
-	    let (nhyps,nargs,rids) =
+	    let (rids,filter) =
               List.fold_right2
-                (fun (rid, ob,c as h) a (hy,ar,ri) ->
+                (fun (rid, ob,c as h) a (ri,filter) ->
                   try
                   (* Check if some id to clear occurs in the instance
                      a of rid in ev and remember the dependency *)
@@ -463,24 +489,24 @@ let rec check_and_clear_in_constr evdref err ids c =
                     in
                     let () = Id.Map.iter check ri in
                   (* No dependency at all, we can keep this ev's context hyp *)
-                    (h::hy, a::ar, ri)
-                  with Depends id -> (hy, ar, Id.Map.add rid id ri))
-		ctxt (Array.to_list l) ([],[],Id.Map.empty) in
+                    (ri, true::filter)
+                  with Depends id -> (Id.Map.add rid id ri, false::filter))
+		ctxt (Array.to_list l) (Id.Map.empty,[]) in
 	    (* Check if some rid to clear in the context of ev has dependencies
 	       in the type of ev and adjust the source of the dependency *)
-	    let nconcl =
+	    let _nconcl =
 	      try
                 let nids = Id.Map.domain rids in
-                check_and_clear_in_constr evdref (EvarTypingBreak ev) nids (evar_concl evi)
+                check_and_clear_in_constr env evdref (EvarTypingBreak ev) nids (evar_concl evi)
 	      with ClearDependencyError (rid,err) ->
 		raise (ClearDependencyError (Id.Map.find rid rids,err)) in
 
             if Id.Map.is_empty rids then c
             else
-	      let env = Context.fold_named_context push_named nhyps ~init:(empty_env) in
-	      let ev'= e_new_evar evdref env ~src:(evar_source evk !evdref) nconcl in
-	      evdref := Evd.define evk ev' !evdref;
-	      let (evk',_) = destEvar ev' in
+              let origfilter = Evd.evar_filter evi in
+              let filter = Evd.Filter.apply_subfilter origfilter filter in
+              let evd,_ = restrict_evar !evdref evk filter None in
+              evdref := evd;
 	    (* spiwack: hacking session to mark the old [evk] as having been "cleared" *)
 	      let evi = Evd.find !evdref evk in
 	      let extra = evi.evar_extra in
@@ -488,21 +514,21 @@ let rec check_and_clear_in_constr evdref err ids c =
 	      let evi' = { evi with evar_extra = extra' } in
 	      evdref := Evd.add !evdref evk evi' ;
 	    (* spiwack: /hacking session *)
-	      mkEvar(evk', Array.of_list nargs)
+              whd_evar !evdref c
 
-      | _ -> map_constr (check_and_clear_in_constr evdref err ids) c
+      | _ -> map_constr (check_and_clear_in_constr env evdref err ids) c
 
-let clear_hyps_in_evi_main evdref hyps terms ids =
+let clear_hyps_in_evi_main env evdref hyps terms ids =
   (* clear_hyps_in_evi erases hypotheses ids in hyps, checking if some
      hypothesis does not depend on a element of ids, and erases ids in
      the contexts of the evars occuring in evi *)
   let terms =
-    List.map (check_and_clear_in_constr evdref (OccurHypInSimpleClause None) ids) terms in
+    List.map (check_and_clear_in_constr env evdref (OccurHypInSimpleClause None) ids) terms in
   let nhyps =
     let check_context ((id,ob,c) as decl) =
       let err = OccurHypInSimpleClause (Some id) in
-      let ob' = Option.smartmap (fun c -> check_and_clear_in_constr evdref err ids c) ob in
-      let c' = check_and_clear_in_constr evdref err ids c in
+      let ob' = Option.smartmap (fun c -> check_and_clear_in_constr env evdref err ids c) ob in
+      let c' = check_and_clear_in_constr env evdref err ids c in
       if ob == ob' && c == c' then decl else (id, ob', c')
     in
     let check_value vk = match force_lazy_val vk with
@@ -520,26 +546,15 @@ let clear_hyps_in_evi_main evdref hyps terms ids =
   in
   (nhyps,terms)
 
-let clear_hyps_in_evi evdref hyps concl ids =
-  match clear_hyps_in_evi_main evdref hyps [concl] ids with
+let clear_hyps_in_evi env evdref hyps concl ids =
+  match clear_hyps_in_evi_main env evdref hyps [concl] ids with
   | (nhyps,[nconcl]) -> (nhyps,nconcl)
   | _ -> assert false
 
-let clear_hyps2_in_evi evdref hyps t concl ids =
-  match clear_hyps_in_evi_main evdref hyps [t;concl] ids with
+let clear_hyps2_in_evi env evdref hyps t concl ids =
+  match clear_hyps_in_evi_main env evdref hyps [t;concl] ids with
   | (nhyps,[t;nconcl]) -> (nhyps,t,nconcl)
   | _ -> assert false
-
-(** The following functions return the set of evars immediately
-    contained in the object, including defined evars *)
-
-let evars_of_term c =
-  let rec evrec acc c =
-    match kind_of_term c with
-    | Evar (n, l) -> Evar.Set.add n (Array.fold_left evrec acc l)
-    | _ -> fold_constr evrec acc c
-  in
-  evrec Evar.Set.empty c
 
 (* spiwack: a few functions to gather evars on which goals depend. *)
 let queue_set q is_dependent set =
@@ -588,21 +603,6 @@ let gather_dependent_evars evm l =
 
 (* /spiwack *)
 
-let evars_of_named_context nc =
-  List.fold_right (fun (_, b, t) s ->
-    Option.fold_left (fun s t ->
-      Evar.Set.union s (evars_of_term t))
-      (Evar.Set.union s (evars_of_term t)) b)
-    nc Evar.Set.empty
-
-let evars_of_evar_info evi =
-  Evar.Set.union (evars_of_term evi.evar_concl)
-    (Evar.Set.union
-	(match evi.evar_body with
-	| Evar_empty -> Evar.Set.empty
-	| Evar_defined b -> evars_of_term b)
-	(evars_of_named_context (named_context_of_val evi.evar_hyps)))
-
 (** The following functions return the set of undefined evars
     contained in the object, the defined evars being traversed.
     This is roughly a combination of the previous functions and
@@ -650,11 +650,21 @@ let check_evars env initial_sigma sigma c =
             let (loc,k) = evar_source evk sigma in
 	      match k with
 	      | Evar_kinds.ImplicitArg (gr, (i, id), false) -> ()
-	      | _ ->
-		  let evi = nf_evar_info sigma (Evd.find_undefined sigma evk) in
-		    error_unsolvable_implicit loc env sigma evi k None)
+	      | _ -> error_unsolvable_implicit loc env sigma evk None)
       | _ -> iter_constr proc_rec c
   in proc_rec c
+
+(* spiwack: this is a more complete version of
+   {!Termops.occur_evar}. The latter does not look recursively into an
+   [evar_map]. If unification only need to check superficially, tactics
+   do not have this luxury, and need the more complete version. *)
+let occur_evar_upto sigma n c =
+  let rec occur_rec c = match kind_of_term c with
+    | Evar (sp,_) when Evar.equal sp n -> raise Occur
+    | Evar e -> Option.iter occur_rec (existential_opt_value sigma e)
+    | _ -> iter_constr occur_rec c
+  in
+  try occur_rec c; false with Occur -> true
 
 
 (****************************************)
@@ -699,20 +709,21 @@ let define_pure_evar_as_product evd evk =
   let evi = Evd.find_undefined evd evk in
   let evenv = evar_env evi in
   let id = next_ident_away idx (ids_of_named_context (evar_context evi)) in
-  let s = destSort evi.evar_concl in
-  let evd1,(dom,u1) = new_type_evar univ_flexible_alg evd evenv ~filter:(evar_filter evi) in
+  let concl = whd_evar evd evi.evar_concl in
+  let s = destSort concl in
+  let evd1,(dom,u1) = new_type_evar evenv evd univ_flexible_alg ~filter:(evar_filter evi) in
   let evd2,rng =
     let newenv = push_named (id, None, dom) evenv in
     let src = evar_source evk evd1 in
     let filter = Filter.extend 1 (evar_filter evi) in
       if is_prop_sort s then
        (* Impredicative product, conclusion must fall in [Prop]. *)
-        new_evar evd1 newenv evi.evar_concl ~src ~filter
+        new_evar newenv evd1 concl ~src ~filter
       else
 	let evd3, (rng, srng) =
-	  new_type_evar univ_flexible_alg evd1 newenv ~src ~filter in
+	  new_type_evar newenv evd1 univ_flexible_alg ~src ~filter in
 	let prods = Univ.sup (univ_of_sort u1) (univ_of_sort srng) in
-	let evd3 = Evd.set_leq_sort evd3 (Type prods) s in
+	let evd3 = Evd.set_leq_sort evenv evd3 (Type prods) s in
 	  evd3, rng
   in
   let prod = mkProd (Name id, dom, subst_var id rng) in
@@ -753,7 +764,7 @@ let define_pure_evar_as_lambda env evd evk =
   let newenv = push_named (id, None, dom) evenv in
   let filter = Filter.extend 1 (evar_filter evi) in
   let src = evar_source evk evd1 in
-  let evd2,body = new_evar evd1 newenv ~src (subst1 (mkVar id) rng) ~filter in
+  let evd2,body = new_evar newenv evd1 ~src (subst1 (mkVar id) rng) ~filter in
   let lam = mkLambda (Name id, dom, subst_var id body) in
   Evd.define evk lam evd2, lam
 
@@ -776,12 +787,12 @@ let rec evar_absorb_arguments env evd (evk,args as ev) = function
 
 (* Refining an evar to a sort *)
 
-let define_evar_as_sort evd (ev,args) =
+let define_evar_as_sort env evd (ev,args) =
   let evd, u = new_univ_variable univ_rigid evd in
   let evi = Evd.find_undefined evd ev in 
   let s = Type u in
   let evd' = Evd.define ev (mkSort s) evd in
-    Evd.set_leq_sort evd' (Type (Univ.super u)) (destSort evi.evar_concl), s
+    Evd.set_leq_sort env evd' (Type (Univ.super u)) (destSort evi.evar_concl), s
 
 (* We don't try to guess in which sort the type should be defined, since
    any type has type Type. May cause some trouble, but not so far... *)
@@ -821,3 +832,9 @@ let lift_tycon n = Option.map (lift n)
 let pr_tycon env = function
     None -> str "None"
   | Some t -> Termops.print_constr_env env t
+
+let subterm_source evk (loc,k) =
+  let evk = match k with
+    | Evar_kinds.SubEvar (evk) -> evk
+    | _ -> evk in
+  (loc,Evar_kinds.SubEvar evk)

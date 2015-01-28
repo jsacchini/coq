@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -24,21 +24,21 @@ open Entries
 open Typeops
 open Fast_typeops
 
-let constrain_type env j poly = function
+let constrain_type env j poly subst = function
   | `None -> 
     if not poly then (* Old-style polymorphism *)
       make_polymorphic_if_constant_for_ind env j
-    else RegularArity j.uj_type
+    else RegularArity (Vars.subst_univs_level_constr subst j.uj_type)
   | `Some t ->
       let tj = infer_type env t in
       let _ = judge_of_cast env j DEFAULTcast tj in
 	assert (eq_constr t tj.utj_val);
-	RegularArity t
+	RegularArity (Vars.subst_univs_level_constr subst t)
   | `SomeWJ (t, tj) ->
       let tj = infer_type env t in
       let _ = judge_of_cast env j DEFAULTcast tj in
 	assert (eq_constr t tj.utj_val);
-	RegularArity t
+	RegularArity (Vars.subst_univs_level_constr subst t)
 
 let map_option_typ = function None -> `None | Some x -> `Some x
 
@@ -49,9 +49,9 @@ let mk_pure_proof c = (c, Univ.ContextSet.empty), Declareops.no_seff
 let handle_side_effects env body side_eff =
   let handle_sideff t se =
     let cbl = match se with
-      | SEsubproof (c,cb) -> [c,cb]
-      | SEscheme (cl,_) -> List.map (fun (_,c,cb) -> c,cb) cl in
-    let not_exists (c,_) =
+      | SEsubproof (c,cb,b) -> [c,cb,b]
+      | SEscheme (cl,_) -> List.map (fun (_,c,cb,b) -> c,cb,b) cl in
+    let not_exists (c,_,_) =
       try ignore(Environ.lookup_constant c env); false
       with Not_found -> true in 
     let cbl = List.filter not_exists cbl in
@@ -65,16 +65,11 @@ let handle_side_effects env body side_eff =
       | _ -> map_constr_with_binders ((+) 1) (fun i x -> sub c i x) i x in
     let rec sub_body c u b i x = match kind_of_term x with
       | Const (c',u') when eq_constant c c' -> 
-	let subst = 
-	  Array.fold_left2 (fun subst l l' -> Univ.LMap.add l l' subst)
-	    Univ.LMap.empty (Instance.to_array u) (Instance.to_array u')
-	in 
-	  Vars.subst_univs_level_constr subst b
+	Vars.subst_instance_constr u' b
       | _ -> map_constr_with_binders ((+) 1) (fun i x -> sub_body c u b i x) i x in
-    let fix_body (c,cb) t =
-      match cb.const_body with
-      | Undef _ -> assert false
-      | Def b ->
+    let fix_body (c,cb,b) t =
+      match cb.const_body, b with
+      | Def b, _ ->
           let b = Mod_subst.force_constr b in
 	  let poly = cb.const_polymorphic in
 	    if not poly then
@@ -84,8 +79,7 @@ let handle_side_effects env body side_eff =
 	    else 
 	      let univs = cb.const_universes in
 		sub_body c (Univ.UContext.instance univs) b 1 (Vars.lift 1 t)
-      | OpaqueDef b -> 
-          let b = Opaqueproof.force_proof b in
+      | OpaqueDef _, `Opaque (b,_) -> 
 	  let poly = cb.const_polymorphic in
 	    if not poly then
               let b_ty = Typeops.type_of_constant_type env cb.const_type in
@@ -94,6 +88,7 @@ let handle_side_effects env body side_eff =
 	    else
 	      let univs = cb.const_universes in
 		sub_body c (Univ.UContext.instance univs) b 1 (Vars.lift 1 t)
+      | _ -> assert false
     in
       List.fold_right fix_body cbl t
   in
@@ -106,65 +101,44 @@ let hcons_j j =
 
 let feedback_completion_typecheck =
   Option.iter (fun state_id -> Pp.feedback ~state_id Feedback.Complete)
-
-let check_projection env kn inst body =
-  let cannot_recognize () = error ("Cannot recognize a projection") in
-  let ctx, m = decompose_lam_assum body in
-  let () = if not (isCase m) then cannot_recognize () in
-  let ci, p, c, b = destCase m in
-  let (mib, oib as _specif) = Inductive.lookup_mind_specif env ci.ci_ind in
-  let recinfo = match mib.mind_record with
-    | None -> 
-      error ("Trying to declare a primitive projection for a non-record inductive type")
-    | Some (_, r) -> r
-  in
-  let n = mib.mind_nparams in
-  let () = 
-    if n + 1 != List.length ctx ||
-      not (isRel c) || destRel c != 1 || Array.length b != 1 ||
-      not (isLambda p)
-    then cannot_recognize ()
-  in
-  let (na, t, ty) = destLambda (Vars.subst1 mkProp p) in 
-  let argctx, p = decompose_lam_assum b.(0) in
-  (* No need to check the lambdas as the case is well-formed *)
-  let () = if not (isRel p) then cannot_recognize () in
-  let var = destRel p in
-  let () = if not (var <= Array.length recinfo) then cannot_recognize () in
-  let arg = Array.length recinfo - var in
-  let () = if not (eq_con_chk recinfo.(arg) kn) then cannot_recognize () in
-  let pb = { proj_ind = fst ci.ci_ind;
-	     proj_npars = n;
-	     proj_arg = arg;
-	     proj_type = ty;
-	     proj_body = body }
-  in pb
   
+let subst_instance_j s j =
+  { uj_val = Vars.subst_univs_level_constr s j.uj_val;
+    uj_type = Vars.subst_univs_level_constr s j.uj_type }
+
 let infer_declaration env kn dcl =
   match dcl with
   | ParameterEntry (ctx,poly,(t,uctx),nl) ->
       let env = push_context uctx env in
       let j = infer env t in
-      let t = hcons_constr (Typeops.assumption_of_judgment env j) in
-      Undef nl, RegularArity t, None, poly, uctx, false, ctx
+      let abstract = poly && not (Option.is_empty kn) in
+      let usubst, univs = Univ.abstract_universes abstract uctx in
+      let c = Typeops.assumption_of_judgment env j in
+      let t = hcons_constr (Vars.subst_univs_level_constr usubst c) in
+	Undef nl, RegularArity t, None, poly, univs, false, ctx
+
   | DefinitionEntry ({ const_entry_type = Some typ;
-                       const_entry_opaque = true } as c) ->
+                       const_entry_opaque = true;
+		       const_entry_polymorphic = false} as c) ->
       let env = push_context c.const_entry_universes env in
       let { const_entry_body = body; const_entry_feedback = feedback_id } = c in
       let tyj = infer_type env typ in
       let proofterm =
-        Future.chain ~greedy:true ~pure:true body (fun ((body, ctx), side_eff) ->
+        Future.chain ~greedy:true ~pure:true body (fun ((body, ctx),side_eff) ->
           let body = handle_side_effects env body side_eff in
 	  let env' = push_context_set ctx env in
           let j = infer env' body in
           let j = hcons_j j in
-          let _typ = constrain_type env' j c.const_entry_polymorphic (`SomeWJ (typ,tyj)) in
+	  let subst = Univ.LMap.empty in
+          let _typ = constrain_type env' j c.const_entry_polymorphic subst
+	    (`SomeWJ (typ,tyj)) in
           feedback_completion_typecheck feedback_id;
           j.uj_val, ctx) in
       let def = OpaqueDef (Opaqueproof.create proofterm) in
       def, RegularArity typ, None, c.const_entry_polymorphic, 
 	c.const_entry_universes,
 	c.const_entry_inline_code, c.const_entry_secctx
+
   | DefinitionEntry c ->
       let env = push_context c.const_entry_universes env in
       let { const_entry_type = typ; const_entry_opaque = opaque } = c in
@@ -172,31 +146,32 @@ let infer_declaration env kn dcl =
       let (body, ctx), side_eff = Future.join body in
       assert(Univ.ContextSet.is_empty ctx);
       let body = handle_side_effects env body side_eff in
-      let def, typ, proj = 
-	if c.const_entry_proj then
-	  (** This should be the projection defined as a match. *)
-	  let j = infer env body in
-	  let typ = constrain_type env j c.const_entry_polymorphic (map_option_typ typ) in
-	  (** We check it does indeed have the shape of a projection. *)
-	  let inst = Univ.UContext.instance c.const_entry_universes in
-	  let pb = check_projection env (Option.get kn) inst body in
-	  (** We build the eta-expanded form. *)
-	  let context, m = decompose_lam_n_assum (pb.proj_npars + 1) body in 
-	  let body' = mkProj (Option.get kn, mkRel 1) in
-	  let body = it_mkLambda_or_LetIn body' context in
-	    Def (Mod_subst.from_val (hcons_constr body)),
-	    typ, Some pb
-	else
-	  let j = infer env body in
-	  let j = hcons_j j in
-	  let typ = constrain_type env j c.const_entry_polymorphic (map_option_typ typ) in
-	  let def = Def (Mod_subst.from_val j.uj_val) in
-	    def, typ, None
+      let abstract = c.const_entry_polymorphic && not (Option.is_empty kn) in
+      let usubst, univs = Univ.abstract_universes abstract c.const_entry_universes in
+      let j = infer env body in
+      let typ = constrain_type env j c.const_entry_polymorphic usubst (map_option_typ typ) in
+      let def = hcons_constr (Vars.subst_univs_level_constr usubst j.uj_val) in
+      let def = 
+	if opaque then OpaqueDef (Opaqueproof.create (Future.from_val (def, Univ.ContextSet.empty)))
+	else Def (Mod_subst.from_val def) 
       in
-      let univs = c.const_entry_universes in
 	feedback_completion_typecheck feedback_id;
-	def, typ, proj, c.const_entry_polymorphic,
+	def, typ, None, c.const_entry_polymorphic,
         univs, c.const_entry_inline_code, c.const_entry_secctx
+
+  | ProjectionEntry {proj_entry_ind = ind; proj_entry_arg = i} ->
+    let mib, _ = Inductive.lookup_mind_specif env (ind,0) in
+    let kn, pb = 
+      match mib.mind_record with
+      | Some (Some (id, kns, pbs)) -> 
+	if i < Array.length pbs then
+	  kns.(i), pbs.(i)
+	else assert false
+      | _ -> assert false
+    in
+    let term, typ = pb.proj_eta in
+      Def (Mod_subst.from_val (hcons_constr term)), RegularArity typ, Some pb,
+      mib.mind_polymorphic, mib.mind_universes, false, None
 
 let global_vars_set_constant_type env = function
   | RegularArity t -> global_vars_set env t
@@ -221,9 +196,13 @@ let build_constant_declaration kn env (def,typ,proj,poly,univs,inline_code,ctx) 
     let mk_set l = List.fold_right Id.Set.add (List.map pi1 l) Id.Set.empty in
     let inferred_set, declared_set = mk_set inferred, mk_set declared in
     if not (Id.Set.subset inferred_set declared_set) then
-      error ("The following section variable are used but not declared:\n"^
-        (String.concat ", " (List.map Id.to_string
-          (Id.Set.elements (Idset.diff inferred_set declared_set))))) in
+      let l = Id.Set.elements (Idset.diff inferred_set declared_set) in
+      let n = List.length l in
+      errorlabstrm "" (Pp.(str "The following section " ++
+        str (String.plural n "variable") ++
+        str " " ++ str (String.conjugate_verb_to_be n) ++
+        str " used but not declared:" ++
+        fnl () ++ pr_sequence Id.print (List.rev l) ++ str ".")) in
   (* We try to postpone the computation of used section variables *)
   let hyps, def =
     let context_ids = List.map pi1 (named_context env) in
@@ -236,9 +215,11 @@ let build_constant_declaration kn env (def,typ,proj,poly,univs,inline_code,ctx) 
         | Undef _ -> Idset.empty
         | Def cs -> global_vars_set env (Mod_subst.force_constr cs)
         | OpaqueDef lc ->
-            let vars = global_vars_set env (Opaqueproof.force_proof lc) in
+            let vars =
+              global_vars_set env
+                (Opaqueproof.force_proof (opaque_tables env) lc) in
             (* we force so that cst are added to the env immediately after *)
-            ignore(Opaqueproof.force_constraints lc);
+            ignore(Opaqueproof.force_constraints (opaque_tables env) lc);
             !suggest_proof_using kn env vars ids_typ context_ids;
             if !Flags.compilation_mode = Flags.BuildVo then
               record_aux env ids_typ vars;
@@ -267,10 +248,14 @@ let build_constant_declaration kn env (def,typ,proj,poly,univs,inline_code,ctx) 
               let inferred = keep_hyps env (Idset.union ids_typ ids_def) in
               check declared inferred) lc) in
   let tps = 
-    match proj with
-    | None -> Cemitcodes.from_val (compile_constant_body env def)
-    | Some pb ->
-      Cemitcodes.from_val (compile_constant_body env (Def (Mod_subst.from_val pb.proj_body)))
+    (* FIXME: incompleteness of the bytecode vm: we compile polymorphic 
+       constants like opaque definitions. *)
+    if poly then Cemitcodes.from_val Cemitcodes.BCconstant
+    else
+      match proj with
+      | None -> Cemitcodes.from_val (compile_constant_body env def)
+      | Some pb ->
+	Cemitcodes.from_val (compile_constant_body env (Def (Mod_subst.from_val pb.proj_body)))
   in
   { const_hyps = hyps;
     const_body = def;
@@ -305,7 +290,7 @@ let translate_local_def env id centry =
 
 let translate_mind env kn mie = Indtypes.check_inductive env kn mie
 
-let handle_side_effects env ce = { ce with
+let handle_entry_side_effects env ce = { ce with
   const_entry_body = Future.chain ~greedy:true ~pure:true
     ce.const_entry_body (fun ((body, ctx), side_eff) ->
       (handle_side_effects env body side_eff, ctx), Declareops.no_seff);

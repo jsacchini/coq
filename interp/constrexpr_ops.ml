@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -149,11 +149,10 @@ let rec constr_expr_eq e1 e2 =
     constr_expr_eq t1 t2 &&
     constr_expr_eq f1 f2
   | CHole _, CHole _ -> true
-  | CPatVar(_,(b1, i1)), CPatVar(_,(b2, i2)) ->
-    (b1 : bool) == b2 && Id.equal i1 i2
-  | CEvar (_, ev1, c1), CEvar (_, ev2, c2) ->
-    Evar.equal ev1 ev2 &&
-    Option.equal (List.equal constr_expr_eq) c1 c2
+  | CPatVar(_,i1), CPatVar(_,i2) ->
+    Id.equal i1 i2
+  | CEvar (_, id1, c1), CEvar (_, id2, c2) ->
+    Id.equal id1 id2 && List.equal instance_eq c1 c2
   | CSort(_,s1), CSort(_,s2) ->
     Miscops.glob_sort_eq s1 s2
   | CCast(_,a1,(CastConv b1|CastVM b1)), CCast(_,a2,(CastConv b2|CastVM b2)) ->
@@ -226,6 +225,9 @@ and constr_notation_substitution_eq (e1, el1, bl1) (e2, el2, bl2) =
   List.equal (List.equal constr_expr_eq) el1 el2 &&
   List.equal (List.equal local_binder_eq) bl1 bl2
 
+and instance_eq (x1,c1) (x2,c2) =
+  Id.equal x1 x2 && constr_expr_eq c1 c2
+
 let constr_loc = function
   | CRef (Ident (loc,_),_) -> loc
   | CRef (Qualid (loc,_),_) -> loc
@@ -240,7 +242,7 @@ let constr_loc = function
   | CCases (loc,_,_,_,_) -> loc
   | CLetTuple (loc,_,_,_,_) -> loc
   | CIf (loc,_,_,_,_) -> loc
-  | CHole (loc, _, _) -> loc
+  | CHole (loc,_,_,_) -> loc
   | CPatVar (loc,_) -> loc
   | CEvar (loc,_,_) -> loc
   | CSort (loc,_) -> loc
@@ -337,7 +339,7 @@ let coerce_to_id = function
 
 let coerce_to_name = function
   | CRef (Ident (loc,id),_) -> (loc,Name id)
-  | CHole (loc,_,_) -> (loc,Anonymous)
+  | CHole (loc,_,_,_) -> (loc,Anonymous)
   | a -> Errors.user_err_loc
         (constr_loc a,"coerce_to_name",
          str "This expression should be a name.")

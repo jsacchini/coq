@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -58,6 +58,10 @@ sig
   (** Horizontal composition : [compose f1 f2] only keeps parts of [f2] where
       [f1] is set. In particular, [f1] and [f2] must have the same length. *)
 
+  val apply_subfilter : t -> bool list -> t
+  (** [apply_subfilter f1 f2] applies filter [f2] where [f1] is [true]. In
+      particular, the length of [f2] is the number of times [f1] is [true] *)
+
   val restrict_upon : t -> int -> (int -> bool) -> t option
   (** Ad-hoc primitive. *)
 
@@ -77,6 +81,7 @@ end
 type evar_body =
   | Evar_empty
   | Evar_defined of constr
+
 
 module Store : Store.S
 (** Datatype used to store additional information in evar maps. *)
@@ -98,8 +103,6 @@ type evar_info = {
   evar_extra : Store.t
   (** Extra store, used for clever hacks. *)
 }
-
-val eq_evar_info : evar_info -> evar_info -> bool
 
 val make_evar : named_context_val -> types -> evar_info
 val evar_concl : evar_info -> constr
@@ -187,14 +190,6 @@ val define : evar -> constr -> evar_map -> evar_map
 val cmap : (constr -> constr) -> evar_map -> evar_map
 (** Map the function on all terms in the evar map. *)
 
-val diff : evar_map -> evar_map -> evar_map
-(** [diff ext orig] assuming [ext] is an extension of [orig], 
-    return an evar map containing just the extension *)
-
-val merge : evar_map -> evar_map -> evar_map
-(** [merge orig ext] assuming [ext] is an extension of [orig], 
-    return an evar map containing the union of the two maps *)
-
 val is_evar : evar_map -> evar -> bool
 (** Alias for {!mem}. *)
 
@@ -210,6 +205,11 @@ val add_constraints : evar_map -> Univ.constraints -> evar_map
 val undefined_map : evar_map -> evar_info Evar.Map.t
 (** Access the undefined evar mapping directly. *)
 
+val eq_evar_info : evar_map -> evar_info -> evar_info -> bool
+(** Compare the evar_info's up to the universe constraints of the evar map. *)
+
+val drop_all_defined : evar_map -> evar_map
+
 (** {6 Instantiating partial terms} *)
 
 exception NotInstantiatedEvar
@@ -224,10 +224,10 @@ val existential_opt_value : evar_map -> existential -> constr option
 (** Same as {!existential_value} but returns an option instead of raising an
     exception. *)
 
-val instantiate_evar_array : evar_info -> constr -> constr array -> constr
+val evar_instance_array : (Id.t -> 'a -> bool) -> evar_info ->
+  'a array -> (Id.t * 'a) list
 
-val subst_evar_defs_light : substitution -> evar_map -> evar_map
-(** Assume empty universe constraints in [evar_map] and [conv_pbs] *)
+val instantiate_evar_array : evar_info -> constr -> constr array -> constr
 
 val evars_reset_evd  : ?with_conv_pbs:bool -> ?with_univs:bool -> 
   evar_map ->  evar_map -> evar_map
@@ -237,13 +237,32 @@ val evars_reset_evd  : ?with_conv_pbs:bool -> ?with_univs:bool ->
 
 val evar_declare :
   named_context_val -> evar -> types -> ?src:Loc.t * Evar_kinds.t ->
-      ?filter:Filter.t -> ?candidates:constr list -> ?store:Store.t -> 
-  evar_map -> evar_map
+      ?filter:Filter.t -> ?candidates:constr list -> ?store:Store.t ->
+      ?naming:Misctypes.intro_pattern_naming_expr -> evar_map -> evar_map
 (** Convenience function. Just a wrapper around {!add}. *)
+
+val restrict : evar -> evar -> Filter.t -> ?candidates:constr list ->
+  evar_map -> evar_map
+(** Restrict an undefined evar into a new evar by filtering context and
+    possibly limiting the instances to a set of candidates *)
+
+val downcast : evar -> types -> evar_map -> evar_map
+(** Change the type of an undefined evar to a new type assumed to be a
+    subtype of its current type; subtyping must be ensured by caller *)
 
 val evar_source : existential_key -> evar_map -> Evar_kinds.t located
 (** Convenience function. Wrapper around {!find} to recover the source of an
     evar in a given evar map. *)
+
+val evar_ident : existential_key -> evar_map -> Id.t
+
+val rename : existential_key -> Id.t -> evar_map -> evar_map
+
+val evar_key : Id.t -> evar_map -> existential_key
+
+val evar_source_of_meta : metavariable -> evar_map -> Evar_kinds.t located
+
+val dependent_evar_ident : existential_key -> evar_map -> Id.t
 
 (** {5 Side-effects} *)
 
@@ -256,14 +275,41 @@ val eval_side_effects : evar_map -> Declareops.side_effects
 val drop_side_effects : evar_map -> evar_map
 (** This should not be used. For hacking purposes. *)
 
+(** {5 Future goals} *)
+
+val declare_future_goal : Evar.t -> evar_map -> evar_map
+(** Adds an existential variable to the list of future goals. For
+    internal uses only. *)
+
+val declare_principal_goal : Evar.t -> evar_map -> evar_map
+(** Adds an existential variable to the list of future goals and make
+    it principal. Only one existential variable can be made principal, an
+    error is raised otherwise. For internal uses only. *)
+
+val future_goals : evar_map -> Evar.t list
+(** Retrieves the list of future goals. Used by the [refine] primitive
+    of the tactic engine. *)
+
+val principal_future_goal : evar_map -> Evar.t option
+(** Retrieves the name of the principal existential variable if there
+    is one. Used by the [refine] primitive of the tactic engine. *)
+
+val reset_future_goals : evar_map -> evar_map
+(** Clears the list of future goals (as well as the principal future
+    goal). Used by the [refine] primitive of the tactic engine. *)
+
+val restore_future_goals : evar_map -> Evar.t list -> Evar.t option -> evar_map
+(** Sets the future goals (including the principal future goal) to a
+    previous value. Intended to be used after a local list of future
+    goals has been consumed. Used by the [refine] primitive of the
+    tactic engine. *)
+
 (** {5 Sort variables}
 
     Evar maps also keep track of the universe constraints defined at a given
     point. This section defines the relevant manipulation functions. *)
 
 val whd_sort_variable : evar_map -> constr -> constr
-val set_leq_sort : evar_map -> sorts -> sorts -> evar_map
-val set_eq_sort : evar_map -> sorts -> sorts -> evar_map
 
 exception UniversesDiffer
 
@@ -360,8 +406,20 @@ val extract_changed_conv_pbs : evar_map ->
 val extract_all_conv_pbs : evar_map -> evar_map * evar_constraint list
 val loc_of_conv_pb : evar_map -> evar_constraint -> Loc.t
 
-val evar_list : evar_map -> constr -> existential list
-val collect_evars : constr -> Evar.Set.t
+(** The following functions return the set of evars immediately
+    contained in the object; need the term to be evar-normal otherwise
+    defined evars are returned too. *)
+
+val evar_list : constr -> existential list
+  (** excluding evars in instances of evars and collected with
+     redundancies from right to left (used by tactic "instantiate") *)
+
+val evars_of_term : constr -> Evar.Set.t
+  (** including evars in instances of evars *)
+
+val evars_of_named_context : named_context -> Evar.Set.t
+
+val evars_of_filtered_evar_info : evar_info -> Evar.Set.t
 
 (** Metas *)
 val meta_list : evar_map -> (metavariable * clbinding) list
@@ -393,7 +451,7 @@ val map_metas_fvalue : (constr -> constr) -> evar_map -> evar_map
 type metabinding = metavariable * constr * instance_status
 
 val retract_coercible_metas : evar_map -> metabinding list * evar_map
-val subst_defined_metas : metabinding list -> constr -> constr option
+val subst_defined_metas_evars : metabinding list * ('a * existential * constr) list -> constr -> constr option
 
 (** {5 FIXME: Nothing to do here} *)
 
@@ -451,8 +509,8 @@ val whd_sort_variable : evar_map -> constr -> constr
 val normalize_universe : evar_map -> Univ.universe -> Univ.universe
 val normalize_universe_instance : evar_map -> Univ.universe_instance -> Univ.universe_instance
 
-val set_leq_sort : evar_map -> sorts -> sorts -> evar_map
-val set_eq_sort : evar_map -> sorts -> sorts -> evar_map
+val set_leq_sort : env -> evar_map -> sorts -> sorts -> evar_map
+val set_eq_sort : env -> evar_map -> sorts -> sorts -> evar_map
 val has_lub : evar_map -> Univ.universe -> Univ.universe -> evar_map
 val set_eq_level : evar_map -> Univ.universe_level -> Univ.universe_level -> evar_map
 val set_leq_level : evar_map -> Univ.universe_level -> Univ.universe_level -> evar_map
@@ -501,27 +559,46 @@ val fresh_global : ?rigid:rigid -> ?names:Univ.Instance.t -> env -> evar_map ->
 
 val conversion : env -> evar_map -> conv_pb -> constr -> constr -> evar_map
 
-(** This one forgets about the assignemts of universes. *)
 val test_conversion : env -> evar_map -> conv_pb -> constr -> constr -> bool
+(** This one forgets about the assignemts of universes. *)
 
-(********************************************************************
-   constr with holes *)
+val eq_constr_univs : evar_map -> constr -> constr -> evar_map * bool
+(** Syntactic equality up to universes, recording the associated constraints *)
 
-type open_constr = evar_map * constr
+val e_eq_constr_univs : evar_map ref -> constr -> constr -> bool
+(** Syntactic equality up to universes. *)
+
+val eq_constr_univs_test : evar_map -> constr -> constr -> bool
+(** Syntactic equality up to universes, throwing away the (consistent) constraints
+    in case of success. *)
+
+(********************************************************************)
+(* constr with holes and pending resolution of classes, conversion  *)
+(* problems, candidates, etc.                                       *)
+
+type pending = (* before: *) evar_map * (* after: *) evar_map
+
+type pending_constr = pending * constr
+
+type open_constr = evar_map * constr (* Special case when before is empty *)
+
 (** Partially constructed constrs. *)
 
 type unsolvability_explanation = SeveralInstancesFound of int
 (** Failure explanation. *)
 
+val pr_existential_key : evar_map -> evar -> Pp.std_ppcmds
+
 (** {5 Debug pretty-printers} *)
 
 val pr_evar_info : evar_info -> Pp.std_ppcmds
 val pr_evar_constraints : evar_constraint list -> Pp.std_ppcmds
-val pr_evar_map : int option -> evar_map -> Pp.std_ppcmds
-val pr_evar_map_filter : (Evar.t -> evar_info -> bool) ->
+val pr_evar_map : ?with_univs:bool -> int option -> evar_map -> Pp.std_ppcmds
+val pr_evar_map_filter : ?with_univs:bool -> (Evar.t -> evar_info -> bool) ->
   evar_map -> Pp.std_ppcmds
 val pr_metaset : Metaset.t -> Pp.std_ppcmds
 val pr_evar_universe_context : evar_universe_context -> Pp.std_ppcmds
+val pr_evd_level : evar_map -> Univ.Level.t -> Pp.std_ppcmds
 
 (** {5 Deprecated functions} *)
 
@@ -529,5 +606,3 @@ val create_evar_defs      : evar_map -> evar_map
 (** Create an [evar_map] with empty meta map: *)
 
 val create_goal_evar_defs : evar_map -> evar_map
-
-val subst_evar_map : substitution -> evar_map -> evar_map

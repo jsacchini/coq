@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -48,7 +48,8 @@ val is_curmod_library : safe_environment -> bool
 
 (* safe_environment has functional data affected by lazy computations,
  * thus this function returns a new safe_environment *)
-val join_safe_environment : safe_environment -> safe_environment
+val join_safe_environment :
+  ?except:Future.UUIDSet.t -> safe_environment -> safe_environment
 
 (** {6 Enriching a safe environment } *)
 
@@ -97,11 +98,11 @@ val add_constraints :
 (* (\** Generator of universes *\) *)
 (* val next_universe : int safe_transformer *)
 
-(** Settin the strongly constructive or classical logical engagement *)
+(** Setting the strongly constructive or classical logical engagement *)
 val set_engagement : Declarations.engagement -> safe_transformer0
 
-(** Termination checking *)
-val disable_termination_checking : safe_transformer0
+(** Collapsing the type hierarchy *)
+val set_type_in_type : safe_transformer0
 
 (** {6 Interactive module functions } *)
 
@@ -138,7 +139,7 @@ type native_library = Nativecode.global list
 val start_library : DirPath.t -> module_path safe_transformer
 
 val export :
-  Flags.compilation_mode ->
+  ?except:Future.UUIDSet.t ->
   safe_environment -> DirPath.t ->
     module_path * compiled_library * native_library
 

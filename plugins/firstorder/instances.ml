@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -118,16 +118,16 @@ let mk_open_instance id idc gl m t=
       let nid=(fresh_id avoid var_id gl) in
 	(Name nid,None,dummy_constr)::(aux (n-1) (nid::avoid)) in
   let nt=it_mkLambda_or_LetIn revt (aux m []) in
-  let rawt=Detyping.detype false [] [] nt in
+  let rawt=Detyping.detype false [] env evmap nt in
   let rec raux n t=
     if Int.equal n 0 then t else
       match t with
 	  GLambda(loc,name,k,_,t0)->
 	    let t1=raux (n-1) t0 in
-	      GLambda(loc,name,k,GHole (Loc.ghost,Evar_kinds.BinderType name,None),t1)
+	      GLambda(loc,name,k,GHole (Loc.ghost,Evar_kinds.BinderType name,Misctypes.IntroAnonymous,None),t1)
 	| _-> anomaly (Pp.str "can't happen") in
   let ntt=try
-    fst (Pretyping.understand evmap env (raux m rawt))(*FIXME*)
+    fst (Pretyping.understand env evmap (raux m rawt))(*FIXME*)
   with e when Errors.noncritical e ->
     error "Untypable instance, maybe higher-order non-prenex quantification" in
     decompose_lam_n_assum m ntt

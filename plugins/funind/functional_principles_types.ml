@@ -278,7 +278,7 @@ let build_functional_principle interactive_proof old_princ_type sorts funs i pro
     Lemmas.start_proof
       new_princ_name
       (Decl_kinds.Global,false,(Decl_kinds.Proof Decl_kinds.Theorem))
-      (*FIXME*) Evd.empty_evar_universe_context
+      (*FIXME*) Evd.empty
     new_principle_type
       hook
     ;
@@ -384,7 +384,7 @@ let get_funs_constant mp dp =
   in
   function const ->
     let find_constant_body const =
-      match body_of_constant (Global.lookup_constant const) with
+      match Global.body_of_constant const with
 	| Some body ->
 	    let body = Tacred.cbv_norm_flags
 	      (Closure.RedFlags.mkflags [Closure.RedFlags.fZETA])
@@ -597,7 +597,7 @@ let build_scheme fas =
 	 (fun (_,f,sort) ->
 	    let f_as_constant =
 	      try
-		match Nametab.global f with
+		match Smartlocate.global_with_alias f with
 		  | Globnames.ConstRef c -> c
 		  | _ -> Errors.error "Functional Scheme can only be used with functions"
 	      with Not_found ->
@@ -629,7 +629,7 @@ let build_case_scheme fa =
 (*     Constrintern.global_reference  id *)
 (*   in  *)
   let funs =  (fun (_,f,_) ->
-		 try fst (Universes.unsafe_constr_of_global (Nametab.global f))
+		 try fst (Universes.unsafe_constr_of_global (Smartlocate.global_with_alias f))
 		 with Not_found ->
 		   Errors.error ("Cannot find "^ Libnames.string_of_reference f)) fa in
   let first_fun,u = destConst  funs in

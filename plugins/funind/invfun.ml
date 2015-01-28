@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -68,10 +68,11 @@ let do_observe_tac s tac g =
     let v = tac g in
     msgnl (goal ++ fnl () ++ s ++(str " ")++(str "finished")); v
   with reraise ->
+    let reraise = Errors.push reraise in
     let e = Cerrors.process_vernac_interp_error reraise in
     msgnl (str "observation "++ s++str " raised exception " ++
-	     Errors.print e ++ str " on goal " ++ goal );
-    raise reraise;;
+	     Errors.iprint e ++ str " on goal " ++ goal );
+    iraise reraise;;
 
 
 let observe_tac_strm s tac g =
@@ -271,7 +272,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
       List.map
 	(fun (_,_,br_type) ->
 	   List.map
-	     (fun id -> Loc.ghost, IntroIdentifier id)
+	     (fun id -> Loc.ghost, IntroNaming (IntroIdentifier id))
 	     (generate_fresh_id (Id.of_string "y") ids (List.length (fst (decompose_prod_assum br_type))))
 	)
 	branches
@@ -329,7 +330,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
       	List.fold_right
       	  (fun (_,pat) acc ->
       	     match pat with
-	       | IntroIdentifier id -> id::acc
+	       | IntroNaming (IntroIdentifier id) -> id::acc
       	       | _ -> anomaly (Pp.str "Not an identifier")
       	  )
       	  (List.nth intro_pats (pred i))
@@ -487,7 +488,7 @@ let prove_fun_correct functional_induction funs_constr graphs_constr schemes lem
 	    (fun gl -> 
 	      let term = mkApp (mkVar principle_id,Array.of_list bindings) in
 	      let gl', _ty = pf_eapply Typing.e_type_of gl term in
-		apply term gl')
+		Proofview.V82.of_tactic (apply term) gl')
 	   ))
 	  (fun i g -> observe_tac ("proving branche "^string_of_int i) (prove_branche i) g )
       ]
@@ -799,7 +800,7 @@ and intros_with_rewrite_aux : tactic =
 		      Proofview.V82.of_tactic Tauto.tauto g
 		  | Case(_,_,v,_) ->
 		      tclTHENSEQ[
-			Proofview.V82.of_tactic (general_case_analysis false (v,NoBindings));
+			Proofview.V82.of_tactic (simplest_case v);
 			intros_with_rewrite
 		      ] g
 		  | LetIn _ ->
@@ -836,7 +837,7 @@ let rec reflexivity_with_destruct_cases g =
       match kind_of_term (snd (destApp (pf_concl g))).(2) with
 	| Case(_,_,v,_) ->
 	    tclTHENSEQ[
-	      Proofview.V82.of_tactic (general_case_analysis false (v,NoBindings));
+	      Proofview.V82.of_tactic (simplest_case v);
 	      Proofview.V82.of_tactic intros;
 	      observe_tac "reflexivity_with_destruct_cases" reflexivity_with_destruct_cases
 	    ]
@@ -855,7 +856,7 @@ let rec reflexivity_with_destruct_cases g =
 		     if Equality.discriminable (pf_env g) (project g) t1 t2
 		     then Proofview.V82.of_tactic (Equality.discrHyp id) g
 		     else if Equality.injectable (pf_env g) (project g) t1 t2
-		     then tclTHENSEQ [Proofview.V82.of_tactic (Equality.injHyp id);thin [id];intros_with_rewrite]  g
+		     then tclTHENSEQ [Proofview.V82.of_tactic (Equality.injHyp None id);thin [id];intros_with_rewrite]  g
 		     else tclIDTAC g
 		 | _ -> tclIDTAC g
     )
@@ -1013,7 +1014,7 @@ let prove_fun_complete funcs graphs schemes lemmas_types_infos i : tactic =
 	(Simple.generalize [mkApp(applist(graph_principle,params),Array.map (fun c -> applist(c,params)) lemmas)]);
 	Proofview.V82.of_tactic (Simple.intro graph_principle_id);
 	observe_tac "" (tclTHEN_i
-	  (observe_tac "elim" (Proofview.V82.of_tactic ((elim false (mkVar hres,NoBindings) (Some (mkVar graph_principle_id,NoBindings))))))
+	  (observe_tac "elim" (Proofview.V82.of_tactic (elim false None (mkVar hres,NoBindings) (Some (mkVar graph_principle_id,NoBindings)))))
 	  (fun i g -> observe_tac "prove_branche" (prove_branche i) g ))
       ]
       g
@@ -1064,7 +1065,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	       (fun entry ->
 		  (fst (fst(Future.force entry.Entries.const_entry_body)), Option.get entry.Entries.const_entry_type )
 	       )
-	       (make_scheme (Array.map_to_list (fun const -> const,GType None) funs))
+	       (make_scheme (Array.map_to_list (fun const -> const,GType []) funs))
 	    )
     in
     let proving_tac =
@@ -1079,7 +1080,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	 let lem_id = mk_correct_id f_id in
 	 Lemmas.start_proof lem_id
 	   (Decl_kinds.Global,false(*FIXME*),(Decl_kinds.Proof Decl_kinds.Theorem))
-                 (*FIXME*) Evd.empty_evar_universe_context
+                 (*FIXME*) Evd.empty
 	 (fst lemmas_types_infos.(i))
            (Lemmas.mk_hook (fun _ _ -> ()));
 	 ignore (Pfedit.by
@@ -1133,7 +1134,7 @@ let derive_correctness make_scheme functional_induction (funs: constant list) (g
 	 let lem_id = mk_complete_id f_id in
 	 Lemmas.start_proof lem_id
 	   (Decl_kinds.Global,false(*FIXME*),(Decl_kinds.Proof Decl_kinds.Theorem))
-                            (*FIXME*) Evd.empty_evar_universe_context
+                            (*FIXME*) Evd.empty
 	 (fst lemmas_types_infos.(i))
            (Lemmas.mk_hook (fun _ _ -> ()));
 	 ignore (Pfedit.by

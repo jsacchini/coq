@@ -1,12 +1,12 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
 (************************************************************************)
 
-(* créer un Makefile pour un développement Coq automatiquement *)
+(* Coq_makefile: automatically create a Makefile for a Coq development *)
 
 let output_channel = ref stdout
 let makefile_name = ref "Makefile"
@@ -32,17 +32,15 @@ let list_iter_i f =
 
 let section s =
   let l = String.length s in
-  let sep = String.make (l+5) '#'
-  and sep2 = String.make (l+5) ' ' in
-  String.set sep (l+4) '\n';
-  String.set sep2 0 '#';
-  String.set sep2 (l+3) '#';
-  String.set sep2 (l+4) '\n';
-  print sep;
-  print sep2;
+  let print_com s =
+    print "#";
+    print s;
+    print "#\n" in
+  print_com (String.make (l+2) '#');
+  print_com (String.make (l+2) ' ');
   print "# "; print s; print " #\n";
-  print sep2;
-  print sep;
+  print_com (String.make (l+2) ' ');
+  print_com (String.make (l+2) '#');
   print "\n"
 
 let usage () =
@@ -104,7 +102,7 @@ let is_prefix dir1 dir2 =
 
 let physical_dir_of_logical_dir ldir =
   let le = String.length ldir - 1 in
-  let pdir = if ldir.[le] = '.' then String.sub ldir 0 (le - 1) else String.copy ldir in
+  let pdir = if le >= 0 && ldir.[le] = '.' then String.sub ldir 0 (le - 1) else String.copy ldir in
   for i = 0 to le - 1 do
     if pdir.[i] = '.' then pdir.[i] <- '/';
   done;
@@ -139,7 +137,7 @@ let classify_files_by_root var files (inc_ml,inc_i,inc_r) =
 	    printf "\n";
 	  end;
       (* Files in the scope of a -R option (assuming they are disjoint) *)
-	list_iter_i (fun i (pdir,ldir,abspdir) ->
+	list_iter_i (fun i (pdir,_,abspdir) ->
 		       if List.exists (is_prefix abspdir) absdir_of_files then
 			 printf "%s%d=$(patsubst %s/%%,%%,$(filter %s/%%,$(%s)))\n"
 			   var i pdir pdir var)
@@ -176,7 +174,7 @@ let vars_to_put_by_root var_x_files_l (inc_ml,inc_i,inc_r) =
 	  (pdir,pdir',vars_r)::out) 1 [] l
       )
 
-let install_include_by_root =
+let install_include_by_root perms =
   let install_dir for_i (pdir,pdir',vars) =
     let b = vars <> [] in
     if b then begin
@@ -184,7 +182,7 @@ let install_include_by_root =
       print_list " " (List.rev_map (Format.sprintf "$(%s)") vars);
       print "; do \\\n";
       printf "\t install -d \"`dirname \"$(DSTROOT)\"$(COQLIBINSTALL)/%s/$$i`\"; \\\n" pdir';
-      printf "\t install -m 0644 $$i \"$(DSTROOT)\"$(COQLIBINSTALL)/%s/$$i; \\\n" pdir';
+      printf "\t install -m %s $$i \"$(DSTROOT)\"$(COQLIBINSTALL)/%s/$$i; \\\n" perms pdir';
       printf "\tdone\n";
     end;
     for_i b pdir' in
@@ -195,7 +193,7 @@ let install_include_by_root =
       print "\tfor i in ";
       print_list " " (List.rev_map (Format.sprintf "$(%sINC)") l);
       print "; do \\\n";
-      printf "\t install -m 0644 $$i \"$(DSTROOT)\"$(COQLIBINSTALL)/%s/`basename $$i`; \\\n" d;
+      printf "\t install -m %s $$i \"$(DSTROOT)\"$(COQLIBINSTALL)/%s/`basename $$i`; \\\n" perms d;
       printf "\tdone\n"
   in function
   |None,l -> List.iter (install_dir (fun _ _ -> ())) l
@@ -259,20 +257,26 @@ let install (vfiles,(mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles),_,sds) in
     let cmxsfiles = List.rev_append cmofiles mllibfiles in
     let where_what_cmxs = vars_to_put_by_root [("CMXSFILES",cmxsfiles)] inc in
     let where_what_oth = vars_to_put_by_root
-      [("VOFILES",vfiles);("CMOFILES",cmofiles);("CMIFILES",cmifiles);("CMAFILES",mllibfiles)]
+      [("VOFILES",vfiles);("VFILES",vfiles);("GLOBFILES",vfiles);("NATIVEFILES",vfiles);("CMOFILES",cmofiles);("CMIFILES",cmifiles);("CMAFILES",mllibfiles)]
       inc in
     let doc_dir = where_put_doc inc in
     let () = if is_install = Project_file.UnspecInstall then
 	print "userinstall:\n\t+$(MAKE) USERINSTALL=true install\n\n" in
     if (not_empty cmxsfiles) then begin
       print "install-natdynlink:\n";
-      install_include_by_root where_what_cmxs;
+      install_include_by_root "0755" where_what_cmxs;
+      print "\n";
+    end;
+    if (not_empty cmxsfiles) then begin
+      print "install-toploop: $(MLLIBFILES:.mllib=.cmxs)\n";
+      printf "\t install -d \"$(DSTROOT)\"$(COQTOPINSTALL)/\n";
+      printf "\t install -m 0755 $?  \"$(DSTROOT)\"$(COQTOPINSTALL)/\n";
       print "\n";
     end;
     print "install:";
     if (not_empty cmxsfiles) then print "$(if $(HASNATDYNLINK_OR_EMPTY),install-natdynlink)";
     print "\n";
-    install_include_by_root where_what_oth;
+    install_include_by_root "0644" where_what_oth;
     List.iter
       (fun x ->
 	printf "\t+cd %s && $(MAKE) DSTROOT=\"$(DSTROOT)\" INSTALLDEFAULTROOT=\"$(INSTALLDEFAULTROOT)/%s\" install\n" x x)
@@ -323,7 +327,10 @@ let clean sds sps =
     print "\trm -f $(addsuffix .d,$(MLFILES) $(MLIFILES) $(ML4FILES) $(MLLIBFILES) $(MLPACKFILES))\n";
   end;
   if !some_vfile then
-    print "\trm -f $(VOFILES) $(VOFILES:.vo=.vi) $(GFILES) $(VFILES:.v=.v.d) $(VFILES:=.beautified) $(VFILES:=.old)\n";
+    begin
+      print "\trm -f $(OBJFILES) $(OBJFILES:.o=.native) $(NATIVEFILES)\n";
+      print "\trm -f $(VOFILES) $(VOFILES:.vo=.vio) $(GFILES) $(VFILES:.v=.v.d) $(VFILES:=.beautified) $(VFILES:=.old)\n"
+    end;
   print "\trm -f all.ps all-gal.ps all.pdf all-gal.pdf all.glob $(VFILES:.v=.glob) $(VFILES:.v=.tex) $(VFILES:.v=.g.tex) all-mli.tex\n";
   print "\t- rm -rf html mlihtml uninstall_me.sh\n";
   List.iter
@@ -355,12 +362,14 @@ let implicit () =
     print "\t$(OCAMLDEP) -slash $(OCAMLLIBS) \"$<\" > \"$@\" || ( RV=$$?; rm -f \"$@\"; exit $${RV} )\n\n" in
   let ml4_rules () =
     print "$(ML4FILES:.ml4=.cmo): %.cmo: %.ml4\n\t$(CAMLC) $(ZDEBUG) $(ZFLAGS) $(PP) -impl $<\n\n";
-    print "$(filter-out $(MLPACKFILES:.mlpack=.cmx),$(ML4FILES:.ml4=.cmx)): %.cmx: %.ml4\n\t$(CAMLOPTC) $(ZDEBUG) $(ZFLAGS) $(PP) -impl $<\n\n";
+    print "$(filter-out $(addsuffix .cmx,$(foreach lib,$(MLPACKFILES:.mlpack=_MLPACK_DEPENDENCIES),$($(lib)))),$(ML4FILES:.ml4=.cmx)): %.cmx: %.ml4\n";
+    print "\t$(CAMLOPTC) $(ZDEBUG) $(ZFLAGS) $(PP) -impl $<\n\n";
     print "$(addsuffix .d,$(ML4FILES)): %.ml4.d: %.ml4\n";
     print "\t$(COQDEP) $(OCAMLLIBS) \"$<\" > \"$@\" || ( RV=$$?; rm -f \"$@\"; exit $${RV} )\n\n" in
   let ml_rules () =
     print "$(MLFILES:.ml=.cmo): %.cmo: %.ml\n\t$(CAMLC) $(ZDEBUG) $(ZFLAGS) $<\n\n";
-    print "$(filter-out $(MLPACKFILES:.mlpack=.cmx),$(MLFILES:.ml=.cmx)): %.cmx: %.ml\n\t$(CAMLOPTC) $(ZDEBUG) $(ZFLAGS) $<\n\n";
+    print "$(filter-out $(addsuffix .cmx,$(foreach lib,$(MLPACKFILES:.mlpack=_MLPACK_DEPENDENCIES),$($(lib)))),$(MLFILES:.ml=.cmx)): %.cmx: %.ml\n";
+    print "\t$(CAMLOPTC) $(ZDEBUG) $(ZFLAGS) $<\n\n";
     print "$(addsuffix .d,$(MLFILES)): %.ml.d: %.ml\n";
     print "\t$(OCAMLDEP) -slash $(OCAMLLIBS) \"$<\" > \"$@\" || ( RV=$$?; rm -f \"$@\"; exit $${RV} )\n\n" in
   let cmxs_rules () = (* order is important here when there is foo.ml and foo.mllib *)
@@ -381,7 +390,7 @@ in
   let v_rules () =
     print "$(VOFILES): %.vo: %.v\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) $*\n\n";
     print "$(GLOBFILES): %.glob: %.v\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) $*\n\n";
-    print "$(VFILES:.v=.vi): %.vi: %.v\n\t$(COQC) -quick $(COQDEBUG) $(COQFLAGS) $*\n\n";
+    print "$(VFILES:.v=.vio): %.vio: %.v\n\t$(COQC) -quick $(COQDEBUG) $(COQFLAGS) $*\n\n";
     print "$(GFILES): %.g: %.v\n\t$(GALLINA) $<\n\n";
     print "$(VFILES:.v=.tex): %.tex: %.v\n\t$(COQDOC) $(COQDOCFLAGS) -latex $< -o $@\n\n";
     print "$(HTMLFILES): %.html: %.v %.glob\n\t$(COQDOC) $(COQDOCFLAGS) -html $< -o $@\n\n";
@@ -435,21 +444,22 @@ let variables is_install opt (args,defs) =
   -I \"$(COQLIB)library\" -I \"$(COQLIB)parsing\" -I \"$(COQLIB)pretyping\" \\
   -I \"$(COQLIB)interp\" -I \"$(COQLIB)printing\" -I \"$(COQLIB)intf\" \\
   -I \"$(COQLIB)proofs\" -I \"$(COQLIB)tactics\" -I \"$(COQLIB)tools\" \\
-  -I \"$(COQLIB)toplevel\" -I \"$(COQLIB)stm\" -I \"$(COQLIB)grammar\"";
+  -I \"$(COQLIB)toplevel\" -I \"$(COQLIB)stm\" -I \"$(COQLIB)grammar\" \\
+  -I \"$(COQLIB)config\"";
     List.iter (fun c -> print " \\
   -I \"$(COQLIB)/"; print c; print "\"") Coq_config.plugins_dirs; print "\n";
     print "ZFLAGS=$(OCAMLLIBS) $(COQSRCLIBS) -I $(CAMLP4LIB)\n\n";
-    print "CAMLC?=$(OCAMLC) -c -rectypes\n";
-    print "CAMLOPTC?=$(OCAMLOPT) -c -rectypes\n";
-    print "CAMLLINK?=$(OCAMLC) -rectypes\n";
-    print "CAMLOPTLINK?=$(OCAMLOPT) -rectypes\n";
+    print "CAMLC?=$(OCAMLC) -c -rectypes -thread\n";
+    print "CAMLOPTC?=$(OCAMLOPT) -c -rectypes -thread\n";
+    print "CAMLLINK?=$(OCAMLC) -rectypes -thread\n";
+    print "CAMLOPTLINK?=$(OCAMLOPT) -rectypes -thread\n";
     print "GRAMMARS?=grammar.cma\n";
     print "ifeq ($(CAMLP4),camlp5)
-CAMLP4EXTEND=pa_extend.cmo q_MLast.cmo pa_macro.cmo
+CAMLP4EXTEND=pa_extend.cmo q_MLast.cmo pa_macro.cmo unix.cma threads.cma
 else
 CAMLP4EXTEND=
 endif\n";
-    print "PP?=-pp '$(CAMLP4O) -I $(CAMLLIB) $(COQSRCLIBS) compat5.cmo \\
+    print "PP?=-pp '$(CAMLP4O) -I $(CAMLLIB) -I $(CAMLLIB)threads/ $(COQSRCLIBS) compat5.cmo \\
   $(CAMLP4EXTEND) $(GRAMMARS) $(CAMLP4OPTIONS) -impl'\n\n";
     end;
     match is_install with
@@ -463,17 +473,20 @@ endif\n";
 	print "else\n";
         print "COQLIBINSTALL=\"${COQLIB}user-contrib\"\n";
         print "COQDOCINSTALL=\"${DOCDIR}user-contrib\"\n";
+        print "COQTOPINSTALL=\"${COQLIB}toploop\"\n";
 	print "endif\n\n"
       | Project_file.TraditionalInstall ->
           section "Install Paths.";
           print "COQLIBINSTALL=\"${COQLIB}user-contrib\"\n";
           print "COQDOCINSTALL=\"${DOCDIR}user-contrib\"\n";
+          print "COQTOPINSTALL=\"${COQLIB}toploop\"\n";
           print "\n"
       | Project_file.UserInstall ->
           section "Install Paths.";
           print "XDG_DATA_HOME?=\"$(HOME)/.local/share\"\n";
           print "COQLIBINSTALL=$(XDG_DATA_HOME)/coq\n";
           print "COQDOCINSTALL=$(XDG_DATA_HOME)/doc/coq\n";
+          print "COQTOPINSTALL=$(XDG_DATA_HOME)/coq/toploop\n";
           print "\n"
 
 let parameters () =
@@ -489,15 +502,19 @@ let parameters () =
   print "includecmdwithout@ = $(eval $(subst @,$(donewline),$(shell { $(1) | tr -d '\\r' | tr '\\n' '@'; })))\n";
   print "$(call includecmdwithout@,$(COQBIN)coqtop -config)\n\n";
   print "TIMED=\nTIMECMD=\nSTDTIME?=/usr/bin/time -f \"$* (user: %U mem: %M ko)\"\n";
-  print "TIMER=$(if $(TIMED), $(STDTIME), $(TIMECMD))\n\n"
+  print "TIMER=$(if $(TIMED), $(STDTIME), $(TIMECMD))\n\n";
+  print "vo_to_obj = $(addsuffix .o,\\\n";
+  print "  $(filter-out Warning: Error:,\\\n";
+  print "  $(shell $(COQBIN)coqtop -q -noinit -batch -quiet -print-mod-uid $(1))))\n\n"
 
 let include_dirs (inc_ml,inc_i,inc_r) =
-  let parse_ml_includes l = List.map (fun (x,_) -> "-I " ^ x) l in
-  let parse_includes l = List.map (fun (x,l,_) -> "-Q " ^ x ^ " " ^ l) l in
-  let parse_rec_includes l =
-    List.map (fun (p,l,_) ->
-      let l' = if l = "" then "\"\"" else l in "-R " ^ p ^ " " ^ l')
-      l in
+  let parse_ml_includes l = List.map (fun (x,_) -> "-I \"" ^ x ^ "\"") l in
+  let parse_includes l = List.map (fun (x,l,_) ->
+				   let l' = if l = "" then "\"\"" else l in
+				   "-Q \"" ^ x ^ "\" " ^ l' ^"") l in
+  let parse_rec_includes l = List.map (fun (p,l,_) ->
+				       let l' = if l = "" then "\"\"" else l in
+				       "-R \"" ^ p ^ "\" " ^ l' ^"") l in
   let str_ml = parse_ml_includes inc_ml in
   let str_i = parse_includes inc_i in
   let str_r = parse_rec_includes inc_r in
@@ -557,7 +574,11 @@ let main_targets vfiles (mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles) other
       print "GLOBFILES:=$(VFILES:.v=.glob)\n";
       print "GFILES:=$(VFILES:.v=.g)\n";
       print "HTMLFILES:=$(VFILES:.v=.html)\n";
-      print "GHTMLFILES:=$(VFILES:.v=.g.html)\n"
+      print "GHTMLFILES:=$(VFILES:.v=.g.html)\n";
+      print "OBJFILES=$(call vo_to_obj,$(VOFILES))\n";
+      print "ALLNATIVEFILES=$(OBJFILES:.o=.cmi) $(OBJFILES:.o=.cmo) $(OBJFILES:.o=.cmx) $(OBJFILES:.o=.cmxs)\n";
+      print "NATIVEFILES=$(foreach f, $(ALLNATIVEFILES), $(wildcard $f))\n";
+      classify_files_by_root "NATIVEFILES" l inc
   end;
   decl_var "ML4FILES" ml4files;
   decl_var "MLFILES" mlfiles;
@@ -647,9 +668,9 @@ let main_targets vfiles (mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles) other
     end;
   if !some_vfile then
     begin
-      print "quick:\n\t$(MAKE) -f $(firstword $(MAKEFILE_LIST)) all VO=vi\n";
-      print "vi2vo:\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vi2vo $(J) $(VOFILES:%.vo=%.vi)\n";
-      print "checkproofs:\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vi-checking $(J) $(VOFILES:%.vo=%.vi)\n";
+      print "quick: $(VOFILES:.vo=.vio)\n\n";
+      print "vio2vo:\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vio2vo $(J) $(VOFILES:%.vo=%.vio)\n";
+      print "checkproofs:\n\t$(COQC) $(COQDEBUG) $(COQFLAGS) -schedule-vio-checking $(J) $(VOFILES:%.vo=%.vio)\n";
       print "gallina: $(GFILES)\n\n";
       print "html: $(GLOBFILES) $(VFILES)\n";
       print "\t- mkdir -p html\n";
@@ -729,13 +750,13 @@ let ensure_root_dir (v,(mli,ml4,ml,mllib,mlpack),_,_) ((ml_inc,i_inc,r_inc) as l
 
 let warn_install_at_root_directory
     (vfiles,(mlifiles,ml4files,mlfiles,mllibfiles,mlpackfiles),_,_) (inc_ml,inc_i,inc_r) =
-  let inc_r_top = List.filter (fun (_,ldir,_) -> ldir = "") inc_r in
-  let inc_top = List.map (fun (p,_,_) -> p) inc_r_top in
+  let inc_top = List.filter (fun (_,ldir,_) -> ldir = "") (inc_r@inc_i) in
+  let inc_top_p = List.map (fun (p,_,_) -> p) inc_top in
   let files = vfiles @ mlifiles @ ml4files @ mlfiles @ mllibfiles @ mlpackfiles in
-  if inc_r = [] || List.exists (fun f -> List.mem (Filename.dirname f) inc_top) files
+  if List.exists (fun f -> List.mem (Filename.dirname f) inc_top_p) files
   then
-    Printf.eprintf "Warning: install target will copy files at the first level of the coq contributions installation directory; option -R %sis recommended\n"
-      (if inc_r_top = [] then "" else "with non trivial logical root ")
+    Printf.eprintf "Warning: install target will copy files at the first level of the coq contributions installation directory; option -R or -Q %sis recommended\n"
+      (if inc_top = [] then "" else "with non trivial logical root ")
 
 let check_overlapping_include (_,inc_i,inc_r) =
   let pwd = Sys.getcwd () in

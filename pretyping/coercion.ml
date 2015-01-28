@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -9,7 +9,7 @@
 (* Created by Hugo Herbelin for Coq V7 by isolating the coercion
    mechanism out of the type inference algorithm in file trad.ml from
    Coq V6.3, Nov 1999; The coercion mechanism was implemented in
-   trad.ml by Amokrane Saïbi, May 1996 *)
+   trad.ml by Amokrane SaÃ¯bi, May 1996 *)
 (* Addition of products and sorts in canonical structures by Pierre
    Corbineau, Feb 2008 *)
 (* Turned into an abstract compilation unit by Matthieu Sozeau, March 2006 *)
@@ -47,11 +47,21 @@ exception NoCoercion
 exception NoCoercionNoUnifier of evar_map * unification_error
 
 (* Here, funj is a coercion therefore already typed in global context *)
-let apply_coercion_args env evd check argl funj =
+let apply_coercion_args env evd check isproj argl funj =
   let evdref = ref evd in
   let rec apply_rec acc typ = function
-    | [] -> { uj_val = applist (j_val funj,argl);
-	      uj_type = typ }
+    | [] ->
+      if isproj then
+	let cst = fst (destConst (j_val funj)) in
+	let p = Projection.make cst false in
+	let pb = lookup_projection p env in
+	let args = List.skipn pb.Declarations.proj_npars argl in
+	let hd, tl = match args with hd :: tl -> hd, tl | [] -> assert false in
+	  { uj_val = applist (mkProj (p, hd), tl);
+	    uj_type = typ }
+      else
+	{ uj_val = applist (j_val funj,argl);
+	  uj_type = typ }
     | h::restl -> (* On devrait pouvoir s'arranger pour qu'on n'ait pas a faire hnf_constr *)
       match kind_of_term (whd_betadeltaiota env evd typ) with
       | Prod (_,c1,c2) ->
@@ -72,8 +82,8 @@ let apply_pattern_coercion loc pat p =
     pat p
 
 (* raise Not_found if no coercion found *)
-let inh_pattern_coerce_to loc pat ind1 ind2 =
-  let p = lookup_pattern_path_between (ind1,ind2) in
+let inh_pattern_coerce_to loc env pat ind1 ind2 =
+  let p = lookup_pattern_path_between env (ind1,ind2) in
     apply_pattern_coercion loc pat p
 
 (* Program coercions *)
@@ -81,7 +91,7 @@ let inh_pattern_coerce_to loc pat ind1 ind2 =
 open Program
 
 let make_existential loc ?(opaque = Evar_kinds.Define true) env evdref c =
-  Evarutil.e_new_evar evdref env ~src:(loc, Evar_kinds.QuestionMark opaque) c
+  Evarutil.e_new_evar env evdref ~src:(loc, Evar_kinds.QuestionMark opaque) c
 
 let app_opt env evdref f t =
   whd_betaiota !evdref (app_opt f t)
@@ -335,7 +345,7 @@ let saturate_evd env evd =
   Typeclasses.resolve_typeclasses
     ~filter:Typeclasses.no_goals ~split:false ~fail:false env evd
 
-(* appliquer le chemin de coercions p à hj *)
+(* appliquer le chemin de coercions p Ã  hj *)
 let apply_coercion env sigma p hj typ_cl =
   try
     let j,t,evd = 
@@ -345,13 +355,10 @@ let apply_coercion env sigma p hj typ_cl =
 	  let sigma = Evd.merge_context_set Evd.univ_flexible sigma ctx in
 	  let argl = (class_args_of env sigma typ_cl)@[ja.uj_val] in
 	  let sigma, jres = 
-	    apply_coercion_args env sigma true argl fv 
+	    apply_coercion_args env sigma true isproj argl fv 
 	  in
 	    (if isid then
 	      { uj_val = ja.uj_val; uj_type = jres.uj_type }
-	     else if isproj then
-	       { uj_val = mkProj (fst (destConst fv.uj_val), ja.uj_val); 
-		 uj_type = jres.uj_type }
 	     else
 	      jres),
 	    jres.uj_type,sigma)
@@ -403,7 +410,7 @@ let inh_coerce_to_sort loc env evd j =
     match kind_of_term typ with
     | Sort s -> (evd,{ utj_val = j.uj_val; utj_type = s })
     | Evar ev when not (is_defined evd (fst ev)) ->
-	let (evd',s) = define_evar_as_sort evd ev in
+	let (evd',s) = define_evar_as_sort env evd ev in
 	  (evd',{ utj_val = j.uj_val; utj_type = s })
     | _ ->
 	inh_tosort_force loc env evd j
@@ -499,12 +506,6 @@ let inh_conv_coerce_to_gen resolve_tc rigidonly loc env evd cj t =
       	      inh_conv_coerce_to_fail loc env evd' rigidonly (Some cj.uj_val) cj.uj_type t
 	  with NoCoercionNoUnifier (best_failed_evd,e) ->
 	    error_actual_type_loc loc env best_failed_evd cj t e
-
-	(* let evd = saturate_evd env evd in *)
-      	(*   try *)
-      	(*     inh_conv_coerce_to_fail loc env evd rigidonly (Some cj.uj_val) cj.uj_type t *)
-	(*   with NoCoercionNoUnifier (best_failed_evd,e) -> *)
-	    (* error_actual_type_loc loc env best_failed_evd cj t e *)
   in
   let val' = match val' with Some v -> v | None -> assert(false) in
     (evd',{ uj_val = val'; uj_type = t })

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -184,14 +184,13 @@ let judge_of_constant_knowing_parameters env (kn,u as cst) args =
 let judge_of_constant env cst =
   judge_of_constant_knowing_parameters env cst [||]
 
-let type_of_projection env (cst,u) =
+let type_of_projection env (p,u) =
+  let cst = Projection.constant p in
   let cb = lookup_constant cst env in
   match cb.const_proj with
   | Some pb ->
     if cb.const_polymorphic then
-      let mib,_ = lookup_mind_specif env (pb.proj_ind,0) in
-      let subst = make_inductive_subst mib u in
-	Vars.subst_univs_level_constr subst pb.proj_type
+      Vars.subst_instance_constr u pb.proj_type
     else pb.proj_type
   | None -> raise (Invalid_argument "type_of_projection: not a projection")
 
@@ -388,10 +387,8 @@ let judge_of_projection env p cj =
     with Not_found -> error_case_not_inductive env cj
   in
     assert(eq_mind pb.proj_ind (fst ind));
-    let usubst = make_inductive_subst (fst (lookup_mind_specif env ind)) u in
-    let ty = Vars.subst_univs_level_constr usubst pb.Declarations.proj_type in
+    let ty = Vars.subst_instance_constr u pb.Declarations.proj_type in
     let ty = substl (cj.uj_val :: List.rev args) ty in
-      (* TODO: Universe polymorphism for projections *)
       {uj_val = mkProj (p,cj.uj_val);
        uj_type = ty}
 

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -17,6 +17,10 @@
     then we compile them one by one while passing by the rest of the command
     line to a process running "coqtop -batch -compile <file>".
 *)
+
+(* Environment *)
+
+let environment = Unix.environment ()
 
 let binary = ref "coqtop"
 let image = ref ""
@@ -38,7 +42,19 @@ let rec make_compilation_args = function
 
 let compile command args files =
   let args' = command :: args @ (make_compilation_args files) in
-  Unix.execvp command (Array.of_list args')
+  match Sys.os_type with
+  | "Win32" ->
+     let pid =
+        Unix.create_process_env command (Array.of_list args') environment
+        Unix.stdin Unix.stdout Unix.stderr
+     in
+     let status = snd (Unix.waitpid [] pid) in
+     let errcode =
+       match status with Unix.WEXITED c|Unix.WSTOPPED c|Unix.WSIGNALED c -> c
+     in
+     exit errcode
+  | _ ->
+     Unix.execvpe command (Array.of_list args') environment
 
 let usage () =
   Usage.print_usage_coqc () ;
@@ -95,7 +111,8 @@ let parse_args () =
       |"-dont-load-proofs"|"-load-proofs"|"-force-load-proofs"
       |"-impredicative-set"|"-vm"|"-no-native-compiler"
       |"-verbose-compat-notations"|"-no-compat-notations"
-      |"-indices-matter"|"-quick"
+      |"-indices-matter"|"-quick"|"-color"
+      |"-async-proofs-always-delegate"|"-async-proofs-never-reopen-branch"
       |"-disable-termination-checking"
       as o) :: rem ->
 	parse (cfiles,o::args) rem
@@ -106,7 +123,7 @@ let parse_args () =
       |"-load-vernac-source"|"-l"|"-load-vernac-object"
       |"-load-ml-source"|"-require"|"-load-ml-object"
       |"-init-file"|"-dump-glob"|"-compat"|"-coqlib"
-      |"-async-proofs-j" |"-async-proofs-worker-flags" |"-async-proofs"
+      |"-async-proofs-j" |"-async-proofs-private-flags" |"-async-proofs"
       as o) :: rem ->
 	begin
 	  match rem with
@@ -128,8 +145,8 @@ let parse_args () =
     | "-R" :: s :: "-as" :: [] -> usage ()
     | "-R" :: s :: t :: rem -> parse (cfiles,t::s::"-R"::args) rem
     | "-Q" :: s :: t :: rem -> parse (cfiles,t::s::"-Q"::args) rem
-    | ("-schedule-vi-checking"
-      |"-check-vi-tasks" | "-schedule-vi2vo" as o) :: s :: rem ->
+    | ("-schedule-vio-checking"
+      |"-check-vio-tasks" | "-schedule-vio2vo" as o) :: s :: rem ->
         let nodash, rem =
           CList.split_when (fun x -> String.length x > 1 && x.[0] = '-') rem in
         extra_arg_needed := false;

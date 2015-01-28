@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -40,7 +40,7 @@ type case_style = Constr.case_style =
   LetStyle | IfStyle | LetPatternStyle | MatchStyle | RegularStyle
 
 type case_printing = Constr.case_printing =
-  { ind_nargs : int; style     : case_style }
+  { ind_tags : bool list; cstr_tags : bool list array; style : case_style }
 
 type case_info = Constr.case_info =
   { ci_ind        : inductive;
@@ -89,7 +89,7 @@ type ('constr, 'types) kind_of_term = ('constr, 'types) Constr.kind_of_term =
   | Case      of case_info * 'constr * 'constr * 'constr array
   | Fix       of ('constr, 'types) pfixpoint
   | CoFix     of ('constr, 'types) pcofixpoint
-  | Proj      of constant * 'constr
+  | Proj      of projection * 'constr
 
 type values = Constr.values
 
@@ -309,6 +309,12 @@ let destCase c = match kind_of_term c with
   | _ -> raise DestKO
 
 let isCase c =  match kind_of_term c with Case _ -> true | _ -> false
+
+let isProj c =  match kind_of_term c with Proj _ -> true | _ -> false
+
+let destProj c = match kind_of_term c with
+  | Proj (p, c) -> (p, c)
+  | _ -> raise DestKO
 
 let destFix c = match kind_of_term c with
   | Fix fix -> fix

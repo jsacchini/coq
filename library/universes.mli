@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -22,6 +22,8 @@ type universe_names =
 
 val global_universe_names : unit -> universe_names
 val set_global_universe_names : universe_names -> unit
+
+val pr_with_global_universes : Level.t -> Pp.std_ppcmds
 
 (** The global universe counter *)
 val set_remote_new_univ_level : universe_level RemoteCounter.installer
@@ -80,14 +82,18 @@ val eq_constr_universes : constr -> constr -> bool universe_constrained
     alpha, casts, application grouping and the universe constraints in [c]. *)
 val leq_constr_universes : constr -> constr -> bool universe_constrained
 
+(** [eq_constr_universes a b] [true, c] if [a] equals [b] modulo alpha, casts,
+    application grouping and the universe constraints in [c]. *)
+val eq_constr_universes_proj : env -> constr -> constr -> bool universe_constrained
+
 (** Build a fresh instance for a given context, its associated substitution and 
     the instantiated constraints. *)
 
 val fresh_instance_from_context : universe_context -> 
-  (universe_instance * universe_level_subst) constrained
+  universe_instance constrained
 
 val fresh_instance_from : universe_context -> universe_instance option ->
-  (universe_instance * universe_level_subst) in_universe_context_set
+  universe_instance in_universe_context_set
 
 val fresh_sort_in_family : env -> sorts_family -> 
   sorts in_universe_context_set

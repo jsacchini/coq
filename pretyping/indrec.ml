@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -59,25 +59,24 @@ let check_privacy_block mib =
 (* Christine Paulin, 1996 *)
 
 let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
-  let usubst = Inductive.make_inductive_subst mib u in
-  let lnamespar = Vars.subst_univs_level_context usubst
-    mib.mind_params_ctxt
-  in
-  let () = check_privacy_block mib in
+  let lnamespar = Vars.subst_instance_context u mib.mind_params_ctxt in
+  let indf = make_ind_family(pind, Termops.extended_rel_list 0 lnamespar) in
+  let constrs = get_constructors env indf in
+  let projs = get_projections env indf in
+
+  let () = if Option.is_empty projs then check_privacy_block mib in
   let () = 
     if not (Sorts.List.mem kind (elim_sorts specif)) then
       raise
 	(RecursionSchemeError
 	   (NotAllowedCaseAnalysis (false, fst (Universes.fresh_sort_in_family env kind), pind)))
   in
-  let ndepar = mip.mind_nrealargs_ctxt + 1 in
+  let ndepar = mip.mind_nrealdecls + 1 in
 
-  (* Pas génant car env ne sert pas à typer mais juste à renommer les Anonym *)
-  (* mais pas très joli ... (mais manque get_sort_of à ce niveau) *)
+  (* Pas gÃ©nant car env ne sert pas Ã  typer mais juste Ã  renommer les Anonym *)
+  (* mais pas trÃ¨s joli ... (mais manque get_sort_of Ã  ce niveau) *)
   let env' = push_rel_context lnamespar env in
 
-  let indf = make_ind_family(pind, Termops.extended_rel_list 0 lnamespar) in
-  let constrs = get_constructors env indf in
 
   let rec add_branch env k =
     if Int.equal k (Array.length mip.mind_consnames) then
@@ -100,11 +99,21 @@ let mis_make_case_com dep env sigma (ind, u as pind) (mib,mip as specif) kind =
 	   (Anonymous,depind,pbody))
           arsign
       in
-      it_mkLambda_or_LetIn_name env'
-       	(mkCase (ci, lift ndepar p,
-		     mkRel 1,
-		     Termops.rel_vect ndepar k))
-       	deparsign
+      let obj = 
+	match projs with
+	| None -> mkCase (ci, lift ndepar p,  mkRel 1,
+			  Termops.rel_vect ndepar k)
+	| Some ps -> 
+	  let term = 
+	    mkApp (mkRel 2, 
+		   Array.map 
+		   (fun p -> mkProj (Projection.make p true, mkRel 1)) ps) in
+	    if dep then
+	      let ty = mkApp (mkRel 3, [| mkRel 1 |]) in 
+		mkCast (term, DEFAULTcast, ty)
+	    else term
+      in
+	it_mkLambda_or_LetIn_name env' obj deparsign
     else
       let cs = lift_constructor (k+1) constrs.(k) in
       let t = build_branch_type env dep (mkRel (k+1)) cs in
@@ -232,7 +241,7 @@ let make_rec_branch_arg env sigma (nparrec,fvect,decF) f cstr recargs =
     in
     prec env 0 []
   in
-  (* ici, cstrprods est la liste des produits du constructeur instantié *)
+  (* ici, cstrprods est la liste des produits du constructeur instantiÃ© *)
   let rec process_constr env i f = function
     | (n,None,t as d)::cprest, recarg::rest ->
         let optionpos =
@@ -282,9 +291,8 @@ let mis_make_indrec env sigma listdepkind mib u =
   let nparams = mib.mind_nparams in
   let nparrec = mib.mind_nparams_rec in
   let evdref = ref sigma in
-  let usubst = Inductive.make_inductive_subst mib u in
   let lnonparrec,lnamesparrec =
-    context_chop (nparams-nparrec) (Vars.subst_univs_level_context usubst mib.mind_params_ctxt) in
+    context_chop (nparams-nparrec) (Vars.subst_instance_context u mib.mind_params_ctxt) in
   let nrec = List.length listdepkind in
   let depPvec =
     Array.make mib.mind_ntypes (None : (bool * constr) option) in
@@ -373,10 +381,27 @@ let mis_make_indrec env sigma listdepkind mib u =
 		      (Anonymous,depind',concl))
 		  arsign'
 	      in
-		it_mkLambda_or_LetIn_name env
-		  (mkCase (ci, pred,
-		          mkRel 1,
-			  branches))
+	      let obj = 
+		let projs = get_projections env indf in
+		  match projs with
+		  | None -> (mkCase (ci, pred,
+				     mkRel 1,
+				     branches))
+		  | Some ps -> 
+		    let branch = branches.(0) in
+		    let ctx, br = decompose_lam_assum branch in
+		    let n, subst = 
+		      List.fold_right (fun (na,b,t) (i, subst) ->
+			if b == None then 
+			  let t = mkProj (Projection.make ps.(i) true, mkRel 1) in
+			    (i + 1, t :: subst)
+			else (i, mkRel 0 :: subst))
+			ctx (0, [])
+		    in
+		    let term = substl subst br in
+		      term
+	      in
+		it_mkLambda_or_LetIn_name env obj
 		  (Termops.lift_rel_context nrec deparsign)
 	    in
 
@@ -495,7 +520,7 @@ let weaken_sort_scheme env evd set sort npars term ty =
       | Prod (n,t,c) ->
 	  if Int.equal np 0 then
             let osort, t' = change_sort_arity sort t in
-	      evdref := (if set then Evd.set_eq_sort else Evd.set_leq_sort) !evdref sort osort;
+	      evdref := (if set then Evd.set_eq_sort else Evd.set_leq_sort) env !evdref sort osort;
               mkProd (n, t', c),
               mkLambda (n, t', mkApp(term,Termops.rel_vect 0 (npars+1)))
 	  else
@@ -513,13 +538,13 @@ let weaken_sort_scheme env evd set sort npars term ty =
 (* Check inductive types only occurs once
 (otherwise we obtain a meaning less scheme) *)
 
-let check_arities listdepkind =
+let check_arities env listdepkind =
   let _ = List.fold_left
     (fun ln (((_,ni as mind),u),mibi,mipi,dep,kind) ->
        let kelim = elim_sorts (mibi,mipi) in
        if not (Sorts.List.mem kind kelim) then raise
 	 (RecursionSchemeError
-	  (NotAllowedCaseAnalysis (true, fst (Universes.fresh_sort_in_family (Global.env ())
+	  (NotAllowedCaseAnalysis (true, fst (Universes.fresh_sort_in_family env
 					      kind),(mind,u))))
        else if Int.List.mem ni ln then raise
 	 (RecursionSchemeError (NotMutualInScheme (mind,mind)))
@@ -529,7 +554,7 @@ let check_arities listdepkind =
 
 let build_mutual_induction_scheme env sigma = function
   | ((mind,u),dep,s)::lrecspec ->
-      let (mib,mip) = Global.lookup_inductive mind in
+      let (mib,mip) = lookup_mind_specif env mind in
       let (sp,tyi) = mind in
       let listdepkind =
 	((mind,u),mib,mip,dep,s)::
@@ -543,7 +568,7 @@ let build_mutual_induction_scheme env sigma = function
 		raise (RecursionSchemeError (NotMutualInScheme (mind,mind'))))
 	   lrecspec)
       in
-      let _ = check_arities listdepkind in
+      let _ = check_arities env listdepkind in
       mis_make_indrec env sigma listdepkind mib u
   | _ -> anomaly (Pp.str "build_induction_scheme expects a non empty list of inductive types")
 

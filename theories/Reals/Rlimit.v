@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -173,6 +173,8 @@ Definition limit_in (X X':Metric_Space) (f:Base X -> Base X')
 (*********)
 Definition R_met : Metric_Space :=
   Build_Metric_Space R R_dist R_dist_pos R_dist_sym R_dist_refl R_dist_tri.
+
+Declare Equivalent Keys dist R_dist.
 
 (*******************************)
 (** *      Limit 1 arg         *)

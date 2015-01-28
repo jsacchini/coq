@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -46,7 +46,7 @@ let pr_fix pr_constr ((t,i),(lna,tl,bl)) =
 
 let pr_puniverses p u = 
   if Univ.Instance.is_empty u then p 
-  else p ++ str"(*" ++ Univ.Instance.pr u ++ str"*)"
+  else p ++ str"(*" ++ Univ.Instance.pr Universes.pr_with_global_universes u ++ str"*)"
 
 let rec pr_constr c = match kind_of_term c with
   | Rel n -> str "#"++int n
@@ -79,7 +79,7 @@ let rec pr_constr c = match kind_of_term c with
   | Ind ((sp,i),u) -> str"Ind(" ++ pr_puniverses (pr_mind sp ++ str"," ++ int i) u ++ str")"
   | Construct (((sp,i),j),u) ->
       str"Constr(" ++ pr_puniverses (pr_mind sp ++ str"," ++ int i ++ str"," ++ int j) u ++ str")"
-  | Proj (p,c) -> str"Proj(" ++ pr_con p ++ str"," ++ pr_constr c ++ str")"
+  | Proj (p,c) -> str"Proj(" ++ pr_con (Projection.constant p) ++ str"," ++ bool (Projection.unfolded p) ++ pr_constr c ++ str")"
   | Case (ci,p,c,bl) -> v 0
       (hv 0 (str"<"++pr_constr p++str">"++ cut() ++ str"Case " ++
              pr_constr c ++ str"of") ++ cut() ++
@@ -222,6 +222,13 @@ let it_mkNamedProd_or_LetIn init = it_named_context_quantifier mkNamedProd_or_Le
 let it_mkNamedProd_wo_LetIn init = it_named_context_quantifier mkNamedProd_wo_LetIn ~init
 let it_mkNamedLambda_or_LetIn init = it_named_context_quantifier mkNamedLambda_or_LetIn ~init
 
+let it_mkLambda_or_LetIn_from_no_LetIn c decls =
+  let rec aux k decls c = match decls with
+  | [] -> c
+  | (na,Some b,t)::decls -> mkLetIn (na,b,t,aux (k-1) decls (liftn 1 k c))
+  | (na,None,t)::decls -> mkLambda (na,t,aux (k-1) decls c)
+  in aux (List.length decls) (List.rev decls) c
+
 (* *)
 
 (* strips head casts and flattens head applications *)
@@ -328,40 +335,63 @@ let map_left2 f a g b =
 let map_constr_with_binders_left_to_right g f l c = match kind_of_term c with
   | (Rel _ | Meta _ | Var _   | Sort _ | Const _ | Ind _
     | Construct _) -> c
-  | Cast (c,k,t) -> let c' = f l c in mkCast (c',k,f l t)
-  | Prod (na,t,c) ->
+  | Cast (b,k,t) -> 
+    let b' = f l b in 
+    let t' = f l t in
+      if b' == b && t' == t then c
+      else mkCast (b',k,t')
+  | Prod (na,t,b) ->
       let t' = f l t in
-      mkProd (na, t', f (g (na,None,t) l) c)
-  | Lambda (na,t,c) ->
+      let b' = f (g (na,None,t) l) b in
+	if t' == t && b' == b then c
+	else mkProd (na, t', b')
+  | Lambda (na,t,b) ->
       let t' = f l t in
-      mkLambda (na, t', f (g (na,None,t) l) c)
-  | LetIn (na,b,t,c) ->
-      let b' = f l b in
+      let b' = f (g (na,None,t) l) b in
+	if t' == t && b' == b then c
+	else mkLambda (na, t', b')
+  | LetIn (na,bo,t,b) ->
+      let bo' = f l bo in
       let t' = f l t in
-      let c' = f (g (na,Some b,t) l) c in
-      mkLetIn (na, b', t', c')
+      let b' = f (g (na,Some bo,t) l) b in
+	if bo' == bo && t' == t && b' == b then c
+	else mkLetIn (na, bo', t', b')	    
   | App (c,[||]) -> assert false
-  | App (c,al) ->
+  | App (t,al) ->
       (*Special treatment to be able to recognize partially applied subterms*)
       let a = al.(Array.length al - 1) in
-      let hd = f l (mkApp (c, Array.sub al 0 (Array.length al - 1))) in
-      mkApp (hd, [| f l a |])
-  | Proj (p,c) ->
-      mkProj (p, f l c)
-  | Evar (e,al) -> mkEvar (e, Array.map_left (f l) al)
-  | Case (ci,p,c,bl) ->
+      let app = (mkApp (t, Array.sub al 0 (Array.length al - 1))) in
+      let app' = f l app in
+      let a' = f l a in
+	if app' == app && a' == a then c
+	else mkApp (app', [| a' |])
+  | Proj (p,b) ->
+    let b' = f l b in
+      if b' == b then c
+      else mkProj (p, b')
+  | Evar (e,al) -> 
+    let al' = Array.map_left (f l) al in
+      if Array.for_all2 (==) al' al then c
+      else mkEvar (e, al')
+  | Case (ci,p,b,bl) ->
       (* In v8 concrete syntax, predicate is after the term to match! *)
-      let c' = f l c in
+      let b' = f l b in
       let p' = f l p in
-      mkCase (ci, p', c', Array.map_left (f l) bl)
+      let bl' = Array.map_left (f l) bl in
+	if b' == b && p' == p && bl' == bl then c
+	else mkCase (ci, p', b', bl')
   | Fix (ln,(lna,tl,bl as fx)) ->
       let l' = fold_rec_types g fx l in
       let (tl', bl') = map_left2 (f l) tl (f l') bl in
-      mkFix (ln,(lna,tl',bl'))
+	if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
+	then c
+	else mkFix (ln,(lna,tl',bl'))
   | CoFix(ln,(lna,tl,bl as fx)) ->
       let l' = fold_rec_types g fx l in
       let (tl', bl') = map_left2 (f l) tl (f l') bl in
-      mkCoFix (ln,(lna,tl',bl'))
+	if Array.for_all2 (==) tl tl' && Array.for_all2 (==) bl bl'
+	then c
+	else mkCoFix (ln,(lna,tl',bl'))
 
 (* strong *)
 let map_constr_with_full_binders g f l cstr = match kind_of_term cstr with
@@ -821,9 +851,9 @@ let align_prod_letin c a : rel_context * constr =
   let (l1,l2) = Util.List.chop lc l in
   l2,it_mkProd_or_LetIn a l1
 
-(* On reduit une serie d'eta-redex de tete ou rien du tout  *)
+(* We reduce a series of head eta-redex or nothing at all   *)
 (* [x1:c1;...;xn:cn]@(f;a1...an;x1;...;xn) --> @(f;a1...an) *)
-(* Remplace 2 versions précédentes buggées                  *)
+(* Remplace 2 earlier buggish versions                      *)
 
 let rec eta_reduce_head c =
   match kind_of_term c with
@@ -909,6 +939,18 @@ let rec mem_named_context id = function
   | (id',_,_) :: _ when Id.equal id id' -> true
   | _ :: sign -> mem_named_context id sign
   | [] -> false
+
+let compact_named_context_reverse sign =
+  let compact l (i1,c1,t1) =
+    match l with
+    | [] -> [[i1],c1,t1]
+    | (l2,c2,t2)::q ->
+       if Option.equal Constr.equal c1 c2 && Constr.equal t1 t2
+       then (i1::l2,c2,t2)::q
+       else ([i1],c1,t1)::l
+  in Context.fold_named_context_reverse compact ~init:[] sign
+
+let compact_named_context sign = List.rev (compact_named_context_reverse sign)
 
 let clear_named_body id env =
   let aux _ = function

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -280,8 +280,8 @@ Fixpoint testbit a n : bool :=
    | S n => testbit (div2 a) n
  end.
 
-Definition shiftl a n := iter n double a.
-Definition shiftr a n := iter n div2 a.
+Definition shiftl a := nat_rect _ a (fun _ => double).
+Definition shiftr a := nat_rect _ a (fun _ => div2).
 
 Fixpoint bitwise (op:bool->bool->bool) n a b :=
  match n with

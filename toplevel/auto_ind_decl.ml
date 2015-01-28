@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -77,24 +77,18 @@ let sumbool = Coqlib.build_coq_sumbool
 
 let andb = fun _ -> (Coqlib.build_bool_type()).Coqlib.andb
 
-let induct_on c =
-  induction false
-    [Tacexpr.ElimOnConstr (Evd.empty,(c,NoBindings))]
-    None (None,None) None
+let induct_on c = induction false None c None None
+
+let destruct_on c = destruct false None c None None
 
 let destruct_on_using c id =
-  destruct false
-    [Tacexpr.ElimOnConstr (Evd.empty,(c,NoBindings))]
-    None
-    (None,Some (dl,IntroOrAndPattern [
-                                    [dl,IntroAnonymous];
-                                    [dl,IntroIdentifier id]]))
+  destruct false None c
+    (Some (dl,[[dl,IntroNaming IntroAnonymous];
+               [dl,IntroNaming (IntroIdentifier id)]]))
     None
 
-let destruct_on c =
-  destruct false
-    [Tacexpr.ElimOnConstr (Evd.empty,(c,NoBindings))]
-    None (None,None) None
+let destruct_on_as c l =
+  destruct false None c (Some (dl,l)) None
 
 (* reconstruct the inductive with the correct deBruijn indexes *)
 let mkFullInd (ind,u) n =
@@ -358,7 +352,7 @@ let do_replace_lb lb_scheme_key aavoid narg p q =
         )))
       )
   in
-  Proofview.Goal.enter begin fun gl ->
+  Proofview.Goal.nf_enter begin fun gl ->
     let type_of_pq = Tacmach.New.of_old (fun gl -> pf_type_of gl p) gl in
     let u,v = destruct_ind type_of_pq
     in let lb_type_of_p =
@@ -387,7 +381,7 @@ let do_replace_lb lb_scheme_key aavoid narg p q =
            in
            Tacticals.New.tclTHENLIST [
              Proofview.tclEFFECTS eff;
-             Equality.replace p q ; Proofview.V82.tactic (apply app) ; Auto.default_auto]
+             Equality.replace p q ; apply app ; Auto.default_auto]
   end
 
 (* used in the bool -> leib side *)
@@ -419,7 +413,7 @@ let do_replace_bl bl_scheme_key (ind,u as indu) aavoid narg lft rgt =
   let rec aux l1 l2 =
     match (l1,l2) with
     | (t1::q1,t2::q2) ->
-        Proofview.Goal.raw_enter begin fun gl ->
+        Proofview.Goal.enter begin fun gl ->
         let tt1 = Tacmach.New.pf_type_of gl t1 in
         if eq_constr t1 t2 then aux q1 q2
         else (
@@ -456,7 +450,7 @@ let do_replace_bl bl_scheme_key (ind,u as indu) aavoid narg lft rgt =
                 Tacticals.New.tclTHENLIST [
                   Proofview.tclEFFECTS eff;
                   Equality.replace_by t1 t2
-                    (Tacticals.New.tclTHEN (Proofview.V82.tactic (apply app)) (Auto.default_auto)) ;
+                    (Tacticals.New.tclTHEN (apply app) (Auto.default_auto)) ;
                   aux q1 q2 ]
               )
         )
@@ -567,7 +561,7 @@ let compute_bl_tact bl_scheme_key ind lnamesparrec nparrec =
           avoid := fresh::(!avoid); fresh
         end gl
       in
-      Proofview.Goal.enter begin fun gl ->
+      Proofview.Goal.nf_enter begin fun gl ->
       let fresh_first_intros = List.map (fun id -> fresh_id id gl) first_intros in
       let freshn = fresh_id (Id.of_string "x") gl in
       let freshm = fresh_id (Id.of_string "y") gl in
@@ -589,22 +583,19 @@ repeat ( apply andb_prop in z;let z1:= fresh "Z" in destruct z as [z1 z]).
 *)
                     Tacticals.New.tclREPEAT (
                       Tacticals.New.tclTHENLIST [
-                         apply_in false false freshz [Loc.ghost, (andb_prop(), NoBindings)] None;
-                         Proofview.Goal.enter begin fun gl ->
+                         Simple.apply_in freshz (andb_prop());
+                         Proofview.Goal.nf_enter begin fun gl ->
                            let fresht = fresh_id (Id.of_string "Z") gl in
-                            (destruct false [Tacexpr.ElimOnConstr
-                                      (Evd.empty,((mkVar freshz,NoBindings)))]
-                                  None
-                                  (None, Some (dl,IntroOrAndPattern [[
-                                    dl,IntroIdentifier fresht;
-                                    dl,IntroIdentifier freshz]])) None)
+                            (destruct_on_as (mkVar freshz)
+                                  [[dl,IntroNaming (IntroIdentifier fresht);
+                                    dl,IntroNaming (IntroIdentifier freshz)]])
                          end
                         ]);
 (*
   Ci a1 ... an = Ci b1 ... bn
  replace bi with ai; auto || replace bi with ai by  apply typeofbi_prod ; auto
 *)
-                      Proofview.Goal.enter begin fun gls ->
+                      Proofview.Goal.nf_enter begin fun gls ->
                         let gl = Proofview.Goal.concl gls in
                         match (kind_of_term gl) with
                         | App (c,ca) -> (
@@ -707,7 +698,7 @@ let compute_lb_tact lb_scheme_key ind lnamesparrec nparrec =
           avoid := fresh::(!avoid); fresh
         end gl
       in
-      Proofview.Goal.enter begin fun gl ->
+      Proofview.Goal.nf_enter begin fun gl ->
       let fresh_first_intros = List.map (fun id -> fresh_id id gl) first_intros in
       let freshn = fresh_id (Id.of_string "x") gl in
       let freshm = fresh_id (Id.of_string "y") gl in
@@ -723,14 +714,14 @@ let compute_lb_tact lb_scheme_key ind lnamesparrec nparrec =
                      Tacticals.New.tclTRY (
                       Tacticals.New.tclORELSE reflexivity (Equality.discr_tac false None)
                      );
-                     Equality.inj None false (mkVar freshz,NoBindings);
+                     Equality.inj None false None (mkVar freshz,NoBindings);
 		     intros; (Proofview.V82.tactic simpl_in_concl);
                      Auto.default_auto;
                      Tacticals.New.tclREPEAT (
-                      Tacticals.New.tclTHENLIST [Proofview.V82.tactic (apply (andb_true_intro()));
+                      Tacticals.New.tclTHENLIST [apply (andb_true_intro());
                                   simplest_split ;Auto.default_auto ]
                       );
-                      Proofview.Goal.enter begin fun gls ->
+                      Proofview.Goal.nf_enter begin fun gls ->
                         let gl = Proofview.Goal.concl gls in
                         (* assume the goal to be eq (eq_type ...) = true *)
                         match (kind_of_term gl) with
@@ -853,7 +844,7 @@ let compute_dec_tact ind lnamesparrec nparrec =
       avoid := fresh::(!avoid); fresh
     end gl
   in
-  Proofview.Goal.enter begin fun gl ->
+  Proofview.Goal.nf_enter begin fun gl ->
   let fresh_first_intros = List.map (fun id -> fresh_id id gl) first_intros in
   let freshn = fresh_id (Id.of_string "x") gl in
   let freshm = fresh_id (Id.of_string "y") gl in
@@ -886,19 +877,19 @@ let compute_dec_tact ind lnamesparrec nparrec =
 	)
 	  (Tacticals.New.tclTHEN (destruct_on eqbnm) Auto.default_auto);
 
-        Proofview.Goal.enter begin fun gl ->
+        Proofview.Goal.nf_enter begin fun gl ->
           let freshH2 = fresh_id (Id.of_string "H") gl in
 	  Tacticals.New.tclTHENS (destruct_on_using (mkVar freshH) freshH2) [
 	    (* left *)
 	    Tacticals.New.tclTHENLIST [
 	      simplest_left;
-              Proofview.V82.tactic (apply (mkApp(blI,Array.map(fun x->mkVar x) xargs)));
+              apply (mkApp(blI,Array.map(fun x->mkVar x) xargs));
               Auto.default_auto
             ]
             ;
 
 	    (*right *)
-            Proofview.Goal.enter begin fun gl ->
+            Proofview.Goal.nf_enter begin fun gl ->
             let freshH3 = fresh_id (Id.of_string "H") gl in
             Tacticals.New.tclTHENLIST [
 	      simplest_right ;
@@ -908,7 +899,7 @@ let compute_dec_tact ind lnamesparrec nparrec =
               assert_by (Name freshH3)
 		(mkApp(eq,[|bb;mkApp(eqI,[|mkVar freshm;mkVar freshm|]);tt|]))
 		(Tacticals.New.tclTHENLIST [
-		  Proofview.V82.tactic (apply (mkApp(lbI,Array.map (fun x->mkVar x) xargs)));
+		  apply (mkApp(lbI,Array.map (fun x->mkVar x) xargs));
                   Auto.default_auto
 		]);
 	      Equality.general_rewrite_bindings_in true

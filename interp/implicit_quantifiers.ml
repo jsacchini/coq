@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -127,7 +127,6 @@ let generalizable_vars_of_glob_constr ?(bound=Id.Set.empty) ?(allowed=Id.Set.emp
 	  else (id, loc) :: vs
 	else vs
     | GApp (loc,f,args) -> List.fold_left (vars bound) vs (f::args)
-    | GProj (loc,p,c) -> vars bound vs c
     | GLambda (loc,na,_,ty,c) | GProd (loc,na,_,ty,c) | GLetIn (loc,na,ty,c) ->
 	let vs' = vars bound vs ty in
 	let bound' = add_name_to_ids bound na in

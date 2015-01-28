@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -97,8 +97,7 @@ Section POS_MOD.
  assert (HHHHH:= lt_0_wB w_digits).
  assert (F0: forall x y, x - y + y = x); auto with zarith.
  intros w1 p; case (spec_to_w_Z p); intros HH1 HH2.
- unfold ww_pos_mod; case w1.
- simpl; rewrite Zmod_small; split; auto with zarith.
+ unfold ww_pos_mod; case w1. reflexivity.
  intros xh xl; rewrite spec_ww_compare.
     case Z.compare_spec;
     rewrite spec_w_0W; rewrite spec_zdigits; fold wB;
@@ -245,14 +244,14 @@ Section DoubleDiv32.
   Notation wwB := (base (ww_digits w_digits)).
   Notation "[| x |]" := (w_to_Z x)  (at level 0, x at level 99).
   Notation "[+| c |]" :=
-   (interp_carry 1 wB w_to_Z c) (at level 0, x at level 99).
+   (interp_carry 1 wB w_to_Z c) (at level 0, c at level 99).
   Notation "[-| c |]" :=
-   (interp_carry (-1) wB w_to_Z c) (at level 0, x at level 99).
+   (interp_carry (-1) wB w_to_Z c) (at level 0, c at level 99).
 
   Notation "[[ x ]]" := (ww_to_Z w_digits w_to_Z x)(at level 0, x at level 99).
   Notation "[-[ c ]]" :=
    (interp_carry (-1) wwB (ww_to_Z w_digits w_to_Z) c)
-   (at level 0, x at level 99).
+   (at level 0, c at level 99).
 
 
   Variable spec_w_0   : [|w_0|] = 0.
@@ -505,7 +504,7 @@ Section DoubleDiv21.
   Notation "[[ x ]]" := (ww_to_Z w_digits w_to_Z x)(at level 0, x at level 99).
   Notation "[-[ c ]]" :=
    (interp_carry (-1) wwB (ww_to_Z w_digits w_to_Z) c)
-   (at level 0, x at level 99).
+   (at level 0, c at level 99).
 
   Variable spec_w_0   : [|w_0|] = 0.
   Variable spec_to_Z  : forall x, 0 <= [|x|] < wB.
@@ -767,7 +766,7 @@ Section DoubleDivGt.
   Notation wwB := (base (ww_digits w_digits)).
   Notation "[| x |]" := (w_to_Z x)  (at level 0, x at level 99).
   Notation "[-| c |]" :=
-   (interp_carry (-1) wB w_to_Z c) (at level 0, x at level 99).
+   (interp_carry (-1) wB w_to_Z c) (at level 0, c at level 99).
 
   Notation "[[ x ]]" := (ww_to_Z w_digits w_to_Z x)(at level 0, x at level 99).
 

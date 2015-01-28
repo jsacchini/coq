@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -79,22 +79,22 @@ ARGUMENT EXTEND rewstrategy
 
     [ glob(c) ] -> [ StratConstr (c, true) ]
   | [ "<-" constr(c) ] -> [ StratConstr (c, false) ]
-  | [ "subterms" rewstrategy(h) ] -> [ StratUnary ("all_subterms", h) ]
-  | [ "subterm" rewstrategy(h) ] -> [ StratUnary ("one_subterm", h) ]
-  | [ "innermost" rewstrategy(h) ] -> [ StratUnary("innermost", h) ]
-  | [ "outermost" rewstrategy(h) ] -> [ StratUnary("outermost", h) ]
-  | [ "bottomup" rewstrategy(h) ] -> [ StratUnary("bottomup", h) ]
-  | [ "topdown" rewstrategy(h) ] -> [ StratUnary("topdown", h) ]
+  | [ "subterms" rewstrategy(h) ] -> [ StratUnary (Subterms, h) ]
+  | [ "subterm" rewstrategy(h) ] -> [ StratUnary (Subterm, h) ]
+  | [ "innermost" rewstrategy(h) ] -> [ StratUnary(Innermost, h) ]
+  | [ "outermost" rewstrategy(h) ] -> [ StratUnary(Outermost, h) ]
+  | [ "bottomup" rewstrategy(h) ] -> [ StratUnary(Bottomup, h) ]
+  | [ "topdown" rewstrategy(h) ] -> [ StratUnary(Topdown, h) ]
   | [ "id" ] -> [ StratId ]
   | [ "fail" ] -> [ StratFail ]
   | [ "refl" ] -> [ StratRefl ]
-  | [ "progress" rewstrategy(h) ] -> [ StratUnary ("progress", h) ]
-  | [ "try" rewstrategy(h) ] -> [ StratUnary ("try", h) ]
-  | [ "any" rewstrategy(h) ] -> [ StratUnary ("any", h) ]
-  | [ "repeat" rewstrategy(h) ] -> [ StratUnary ("repeat", h) ]
-  | [ rewstrategy(h) ";" rewstrategy(h') ] -> [ StratBinary ("compose", h, h') ]
+  | [ "progress" rewstrategy(h) ] -> [ StratUnary (Progress, h) ]
+  | [ "try" rewstrategy(h) ] -> [ StratUnary (Try, h) ]
+  | [ "any" rewstrategy(h) ] -> [ StratUnary (Any, h) ]
+  | [ "repeat" rewstrategy(h) ] -> [ StratUnary (Repeat, h) ]
+  | [ rewstrategy(h) ";" rewstrategy(h') ] -> [ StratBinary (Compose, h, h') ]
   | [ "(" rewstrategy(h) ")" ] -> [ h ]
-  | [ "choice" rewstrategy(h) rewstrategy(h') ] -> [ StratBinary ("choice", h, h') ]
+  | [ "choice" rewstrategy(h) rewstrategy(h') ] -> [ StratBinary (Choice, h, h') ]
   | [ "old_hints" preident(h) ] -> [ StratHints (true, h) ]
   | [ "hints" preident(h) ] -> [ StratHints (false, h) ]
   | [ "terms" constr_list(h) ] -> [ StratTerms h ]
@@ -104,7 +104,7 @@ END
 
 (* By default the strategy for "rewrite_db" is top-down *)
 
-let db_strat db = StratUnary ("topdown", StratHints (false, db))
+let db_strat db = StratUnary (Topdown, StratHints (false, db))
 let cl_rewrite_clause_db db = cl_rewrite_clause_strat (strategy_of_ast (db_strat db))
 
 let cl_rewrite_clause_db = 
@@ -147,22 +147,6 @@ TACTIC EXTEND setoid_rewrite
  | [ "setoid_rewrite" orient(o) glob_constr_with_bindings(c) "in" hyp(id) "at" occurrences(occ)] ->
       [ Proofview.V82.tactic (cl_rewrite_clause c o (occurrences_of occ) (Some id))]
 END
-
-(* let cl_rewrite_clause_newtac_tac c o occ cl = *)
-(*   cl_rewrite_clause_newtac' c o occ cl *)
-
-(* TACTIC EXTEND GenRew *)
-(* | [ "rew" orient(o) glob_constr_with_bindings(c) "in" hyp(id) "at" occurrences(occ) ] -> *)
-(*     [ cl_rewrite_clause_newtac_tac c o (occurrences_of occ) (Some id) ] *)
-(* | [ "rew" orient(o) glob_constr_with_bindings(c) "at" occurrences(occ) "in" hyp(id) ] -> *)
-(*     [ cl_rewrite_clause_newtac_tac c o (occurrences_of occ) (Some id) ] *)
-(* | [ "rew" orient(o) glob_constr_with_bindings(c) "in" hyp(id) ] -> *)
-(*     [ cl_rewrite_clause_newtac_tac c o AllOccurrences (Some id) ] *)
-(* | [ "rew" orient(o) glob_constr_with_bindings(c) "at" occurrences(occ) ] -> *)
-(*     [ cl_rewrite_clause_newtac_tac c o (occurrences_of occ) None ] *)
-(* | [ "rew" orient(o) glob_constr_with_bindings(c) ] -> *)
-(*     [ cl_rewrite_clause_newtac_tac c o AllOccurrences None ] *)
-(* END *)
 
 VERNAC COMMAND EXTEND AddRelation CLASSIFIED AS SIDEFF
   | [ "Add" "Relation" constr(a) constr(aeq) "reflexivity" "proved" "by" constr(lemma1)

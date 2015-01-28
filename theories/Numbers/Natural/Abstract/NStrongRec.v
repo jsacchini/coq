@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -24,7 +24,7 @@ Variable A : Type.
 Variable Aeq : relation A.
 Variable Aeq_equiv : Equivalence Aeq.
 
-(** [strong_rec] allows to define a recursive function [phi] given by
+(** [strong_rec] allows defining a recursive function [phi] given by
     an equation [phi(n) = F(phi)(n)] where recursive calls to [phi]
     in [F] are made on strictly lower numbers than [n].
 

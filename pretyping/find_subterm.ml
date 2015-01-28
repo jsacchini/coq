@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -50,8 +50,7 @@ let check_used_occurrences nbocc (nowhere_except_in,locs) =
 let proceed_with_occurrences f occs x =
   match occs with
   | NoOccurrences -> x
-  | _ ->
-    (* TODO FINISH ADAPTING WITH HUGO *)
+  | occs ->
     let plocs = Locusops.convert_occs occs in
     assert (List.for_all (fun x -> x >= 0) (snd plocs));
     let (nbocc,x) = f 1 x in
@@ -85,7 +84,7 @@ type 'a testing_function = {
   match_fun : 'a -> constr -> 'a;
   merge_fun : 'a -> 'a -> 'a;
   mutable testing_state : 'a;
-  mutable last_found : ((Id.t * hyp_location_flag) option * int * constr) option
+  mutable last_found : position_reporting option
 }
 
 (* Find subterms using a testing function, but only at a list of
@@ -93,7 +92,7 @@ type 'a testing_function = {
    (b,l), b=true means no occurrence except the ones in l and b=false,
    means all occurrences except the ones in l *)
 
-let replace_term_occ_gen_modulo occs test bywhat cl occ t =
+let replace_term_occ_gen_modulo occs like_first test bywhat cl occ t =
   let (nowhere_except_in,locs) = Locusops.convert_occs occs in
   let maxocc = List.fold_right max locs 0 in
   let pos = ref occ in
@@ -101,18 +100,26 @@ let replace_term_occ_gen_modulo occs test bywhat cl occ t =
   let add_subst t subst =
     try
       test.testing_state <- test.merge_fun subst test.testing_state;
-      test.last_found <- Some (cl,!pos,t)
-    with NotUnifiable e ->
+      test.last_found <- Some ((cl,!pos),t)
+    with NotUnifiable e when not like_first ->
       let lastpos = Option.get test.last_found in
-     raise (SubtermUnificationError (!nested,(cl,!pos,t),lastpos,e)) in
+     raise (SubtermUnificationError (!nested,((cl,!pos),t),lastpos,e)) in
   let rec substrec k t =
     if nowhere_except_in && !pos > maxocc then t else
+    if not (Vars.closed0 t) then subst_below k t else
     try
       let subst = test.match_fun test.testing_state t in
       if Locusops.is_selected !pos occs then
-        (add_subst t subst; incr pos;
+        (if !nested then begin
+          (* in case it is nested but not later detected as unconvertible,
+             as when matching "id _" in "id (id 0)" *)
+          let lastpos = Option.get test.last_found in
+          raise (SubtermUnificationError (!nested,((cl,!pos),t),lastpos,None))
+         end;
+         add_subst t subst; incr pos;
          (* Check nested matching subterms *)
-         nested := true; ignore (subst_below k t); nested := false;
+         if occs != Locus.AllOccurrences && occs != Locus.NoOccurrences then
+           begin nested := true; ignore (subst_below k t); nested := false end;
          (* Do the effective substitution *)
          Vars.lift k (bywhat ()))
       else
@@ -126,21 +133,25 @@ let replace_term_occ_gen_modulo occs test bywhat cl occ t =
   (!pos, t')
 
 let replace_term_occ_modulo occs test bywhat t =
+  let occs',like_first =
+    match occs with AtOccs occs -> occs,false | LikeFirst -> AllOccurrences,true in
   proceed_with_occurrences
-    (replace_term_occ_gen_modulo occs test bywhat None) occs t
+    (replace_term_occ_gen_modulo occs' like_first test bywhat None) occs' t
 
-let replace_term_occ_decl_modulo (plocs,hyploc) test bywhat d =
+let replace_term_occ_decl_modulo occs test bywhat d =
+  let (plocs,hyploc),like_first =
+    match occs with AtOccs occs -> occs,false | LikeFirst -> (AllOccurrences,InHyp),true in
   proceed_with_occurrences
     (map_named_declaration_with_hyploc
-       (replace_term_occ_gen_modulo plocs test bywhat)
+       (replace_term_occ_gen_modulo plocs like_first test bywhat)
        hyploc)
     plocs d
 
 (** Finding an exact subterm *)
 
-let make_eq_univs_test evd c =
+let make_eq_univs_test env evd c =
   { match_fun = (fun evd c' ->
-    let b, cst = Universes.eq_constr_universes c c' in
+    let b, cst = Universes.eq_constr_universes_proj env c c' in
       if b then
 	try Evd.add_universe_constraints evd cst
 	with Evd.UniversesDiffer -> raise (NotUnifiable None)
@@ -150,17 +161,19 @@ let make_eq_univs_test evd c =
   last_found = None
 } 
 
-let subst_closed_term_occ evd occs c t =
-  let test = make_eq_univs_test evd c in
+let subst_closed_term_occ env evd occs c t =
+  let test = make_eq_univs_test env evd c in
   let bywhat () = mkRel 1 in
   let t' = replace_term_occ_modulo occs test bywhat t in
     t', test.testing_state
 
-let subst_closed_term_occ_decl evd (plocs,hyploc) c d =
-  let test = make_eq_univs_test evd c in
+let subst_closed_term_occ_decl env evd occs c d =
+  let test = make_eq_univs_test env evd c in
+  let (plocs,hyploc),like_first =
+    match occs with AtOccs occs -> occs,false | LikeFirst -> (AllOccurrences,InHyp),true in
   let bywhat () = mkRel 1 in
   proceed_with_occurrences
     (map_named_declaration_with_hyploc
-       (fun _ -> replace_term_occ_gen_modulo plocs test bywhat None)
+       (fun _ -> replace_term_occ_gen_modulo plocs like_first test bywhat None)
        hyploc) plocs d,
   test.testing_state

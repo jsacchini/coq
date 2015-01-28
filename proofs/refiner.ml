@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -57,7 +57,7 @@ let tclIDTAC gls = goal_goal_list gls
 
 (* the message printing identity tactic *)
 let tclIDTAC_MESSAGE s gls =
-  pp (hov 0 s); pp_flush (); tclIDTAC gls
+  Pp.msg_info (hov 0 s); pp_flush (); tclIDTAC gls
 
 (* General failure tactic *)
 let tclFAIL_s s gls = errorlabstrm "Refiner.tclFAIL_s" (str s)
@@ -218,14 +218,14 @@ let tclSHOWHYPS (tac : tactic) (goal: Goal.goal Evd.sigma)
   rslt;;
 
 
-let catch_failerror e =
+let catch_failerror (e, info) =
   if catchable_exception e then Control.check_for_interrupt ()
   else match e with
   | FailError (0,_) ->
       Control.check_for_interrupt ()
   | FailError (lvl,s) ->
-    raise (Exninfo.copy e (FailError (lvl - 1, s)))
-  | e -> raise e
+    iraise (FailError (lvl - 1, s), info)
+  | e -> iraise (e, info)
   (** FIXME: do we need to add a [Errors.push] here? *)
 
 (* ORELSE0 t1 t2 tries to apply t1 and if it fails, applies t2 *)
@@ -233,7 +233,8 @@ let tclORELSE0 t1 t2 g =
   try
     t1 g
   with (* Breakpoint *)
-    | e when Errors.noncritical e -> catch_failerror e; t2 g
+    | e when Errors.noncritical e ->
+      let e = Errors.push e in catch_failerror e; t2 g
 
 (* ORELSE t1 t2 tries to apply t1 and if it fails or does not progress,
    then applies t2 *)
@@ -245,7 +246,8 @@ let tclORELSE t1 t2 = tclORELSE0 (tclPROGRESS t1) t2
 let tclORELSE_THEN t1 t2then t2else gls =
   match
     try Some(tclPROGRESS t1 gls)
-    with e when Errors.noncritical e -> catch_failerror e; None
+    with e when Errors.noncritical e ->
+      let e = Errors.push e in catch_failerror e; None
   with
     | None -> t2else gls
     | Some sgl ->
@@ -270,13 +272,17 @@ let ite_gen tcal tac_if continue tac_else gl=
       success:=true;result in
   let tac_else0 e gl=
     if !success then
-      raise e
+      iraise e
     else
-      tac_else gl in
-    try
-      tcal tac_if0 continue gl
-    with (* Breakpoint *)
-      | e when Errors.noncritical e -> catch_failerror e; tac_else0 e gl
+      try
+        tac_else gl
+      with
+        e' when Errors.noncritical e' -> iraise e in
+  try
+    tcal tac_if0 continue gl
+  with (* Breakpoint *)
+  | e when Errors.noncritical e ->
+    let e = Errors.push e in catch_failerror e; tac_else0 e gl
 
 (* Try the first tactic and, if it succeeds, continue with
    the second one, and if it fails, use the third one *)
@@ -336,44 +342,3 @@ let tclPUSHEVARUNIVCONTEXT ctx gl =
 
 let tclPUSHCONSTRAINTS cst gl = 
   tclEVARS (Evd.add_constraints (project gl) cst) gl
-
-(* Check that holes in arguments have been resolved *)
-
-let check_evars env sigma extsigma origsigma =
-  let rec is_undefined_up_to_restriction sigma evk =
-    match Evd.evar_body (Evd.find sigma evk) with
-    | Evar_empty -> true
-    | Evar_defined c -> match Term.kind_of_term c with
-      | Term.Evar (evk,l) -> is_undefined_up_to_restriction sigma evk
-      | _ -> 
-        (* We make the assumption that there is no way no refine an
-           evar remaining after typing from the initial term given to
-           apply/elim and co tactics, is it correct? *)
-        false in
-  let rest =
-    Evd.fold_undefined (fun evk evi acc ->
-      if is_undefined_up_to_restriction sigma evk && not (Evd.mem origsigma evk)
-      then
-	evi::acc
-      else
-	acc)
-      extsigma []
-  in
-  match rest with
-  | [] -> ()
-  | evi :: _ ->
-    let (loc,k) = evi.evar_source in
-    let evi = Evarutil.nf_evar_info sigma evi in
-    Pretype_errors.error_unsolvable_implicit loc env sigma evi k None
-
-let gl_check_evars env sigma extsigma gl =
-  let origsigma = gl.sigma in
-  check_evars env sigma extsigma origsigma
-
-let tclWITHHOLES accept_unresolved_holes tac sigma c gl =
-  if sigma == project gl then tac c gl
-  else
-    let res = tclTHEN (tclEVARS sigma) (tac c) gl in
-    if not accept_unresolved_holes then
-      gl_check_evars (pf_env gl) (res).sigma sigma gl;
-    res

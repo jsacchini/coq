@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -11,6 +11,7 @@
 Require Import Coq.Init.Wf.
 Require Import Coq.Program.Utils.
 Require Import ProofIrrelevance.
+Require Import FunctionalExtensionality.
 
 Local Open Scope program_scope.
 
@@ -32,8 +33,7 @@ Section Well_founded.
   (* Notation Fix_F := (Fix_F_sub P F_sub) (only parsing). (* alias *) *)
   (* Definition Fix (x:A) := Fix_F_sub P F_sub x (Rwf x). *)
 
-  Hypothesis
-    F_ext :
+  Hypothesis F_ext :
     forall (x:A) (f g:forall y:{y:A | R y x}, P (`y)),
       (forall y:{y : A | R y x}, f y = g y) -> F_sub x f = F_sub x g.
 
@@ -63,6 +63,7 @@ Section Well_founded.
       Fix_sub x =
       let f_sub := F_sub in
         f_sub x (fun y: {y : A | R y x} => Fix_sub (`y)).
+  Proof.
     exact Fix_eq.
   Qed.
 
@@ -220,8 +221,6 @@ Ltac fold_sub f :=
    functional extensionality. *)
 
 Module WfExtensionality.
-
-  Require Import FunctionalExtensionality.
 
   (** The two following lemmas allow to unfold a well-founded fixpoint definition without
      restriction using the functional extensionality axiom. *)

@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -33,7 +33,9 @@ let catch_gtk_messages () =
       |`FATAL ->
         let () = GToolbox.message_box ~title:"Error" (header ^ msg) in
         Coqide.crash_save 1
-      |`ERROR -> GToolbox.message_box ~title:"Error" (header ^ msg)
+      |`ERROR ->
+        if !Flags.debug then GToolbox.message_box ~title:"Error" (header ^ msg)
+        else Printf.eprintf "%s\n" (header ^ msg)
       |`DEBUG -> Minilib.log msg
       |level when Sys.os_type = "Win32" -> Minilib.log ~level msg
       |_ -> Printf.eprintf "%s\n" msg

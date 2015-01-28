@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -110,7 +110,7 @@ Proof.
     split; split; auto with arith. inversion_clear 1. inversion H0.
   - (* n = (S (S n')) *)
     destruct (even_odd_double n) as ((Ev,Ev'),(Od,Od')).
-    split; split; simpl; rewrite ?double_S.
+    split; split; simpl div2; rewrite ?double_S.
     + inversion_clear 1. inversion_clear H0. auto.
     + injection 1. auto with arith.
     + inversion_clear 1. inversion_clear H0. auto.

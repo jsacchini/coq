@@ -1,6 +1,6 @@
 (************************************************************************)
 (*  v      *   The Coq Proof Assistant  /  The Coq Development Team     *)
-(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2012     *)
+(* <O___,, *   INRIA - CNRS - LIX - LRI - PPS - Copyright 1999-2015     *)
 (*   \VV/  **************************************************************)
 (*    //   *      This file is distributed under the terms of the       *)
 (*         *       GNU Lesser General Public License Version 2.1        *)
@@ -23,11 +23,7 @@ open Common
 
 (*s Some utility functions. *)
 
-let pp_tvar id =
-  let s = Id.to_string id in
-  if String.length s < 2 || s.[1] != '\''
-  then str ("'"^s)
-  else str ("' "^s)
+let pp_tvar id = str ("'" ^ Id.to_string id)
 
 let pp_abst = function
   | [] -> mt ()
@@ -638,7 +634,12 @@ and pp_module_type params = function
       str "functor (" ++ name ++ str ":" ++ typ ++ str ") ->" ++ fnl () ++ def
   | MTsig (mp, sign) ->
       push_visible mp params;
-      let l = List.map pp_specif sign in
+      let try_pp_specif l x =
+	try pp_specif x :: l with Failure "empty phrase" -> l
+      in
+      (* We cannot use fold_right here due to side effects in pp_specif *)
+      let l = List.fold_left try_pp_specif [] sign in
+      let l = List.rev l in
       pop_visible ();
       str "sig " ++ fnl () ++
       v 1 (str " " ++ prlist_with_sep fnl2 identity l) ++
@@ -711,7 +712,12 @@ and pp_module_expr params = function
       str "functor (" ++ name ++ str ":" ++ typ ++ str ") ->" ++ fnl () ++ def
   | MEstruct (mp, sel) ->
       push_visible mp params;
-      let l = List.map pp_structure_elem sel in
+      let try_pp_structure_elem l x =
+	try pp_structure_elem x :: l with Failure "empty phrase" -> l
+      in
+      (* We cannot use fold_right here due to side effects in pp_structure_elem *)
+      let l = List.fold_left try_pp_structure_elem [] sel in
+      let l = List.rev l in
       pop_visible ();
       str "struct " ++ fnl () ++
       v 1 (str " " ++ prlist_with_sep fnl2 identity l) ++
