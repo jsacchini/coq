@@ -91,3 +91,6 @@ val camlp4bin : string ref
 val set_inline_level : int -> unit
 val get_inline_level : unit -> int
 val default_inline_level : int
+
+(** Termination/productivity checking *)
+val do_termination_checking : bool ref

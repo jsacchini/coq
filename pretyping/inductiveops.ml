@@ -437,9 +437,9 @@ let type_of_inductive_knowing_conclusion env mip conclty =
 let control_only_guard env c =
   let check_fix_cofix e c = match kind_of_term c with
     | CoFix (_,(_,_,_) as cofix) ->
-	Inductive.check_cofix e cofix
+        Inductive.check_cofix_if_termination_checking e cofix
     | Fix (_,(_,_,_) as fix) ->
-	Inductive.check_fix e fix
+	Inductive.check_fix_if_termination_checking e fix
     | _ -> ()
   in
   let rec iter env c =

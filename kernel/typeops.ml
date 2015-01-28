@@ -446,13 +446,13 @@ let rec execute env cstr cu =
     | Fix ((vn,i as vni),recdef) ->
         let ((fix_ty,recdef'),cu1) = execute_recdef env recdef i cu in
         let fix = (vni,recdef') in
-        check_fix env fix;
+        check_fix_if_termination_checking env fix;
 	(make_judge (mkFix fix) fix_ty, cu1)
 
     | CoFix (i,recdef) ->
         let ((fix_ty,recdef'),cu1) = execute_recdef env recdef i cu in
         let cofix = (i,recdef') in
-        check_cofix env cofix;
+        check_cofix_if_termination_checking env cofix;
 	(make_judge (mkCoFix cofix) fix_ty, cu1)
 
     (* Partial proofs: unsupported by the kernel *)

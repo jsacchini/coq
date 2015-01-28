@@ -160,6 +160,8 @@ let parse_args arglist =
 	parse rem
     | "-impredicative-set" :: rem ->
         set_engagement Declarations.ImpredicativeSet; parse rem
+    | "-disable-termination-checking" :: rem ->
+        Flags.do_termination_checking := false; parse rem
 
     | ("-I"|"-include") :: d :: "-as" :: p :: rem -> set_include d p; parse rem
     | ("-I"|"-include") :: d :: "-as" :: [] -> usage ()
@@ -255,7 +257,7 @@ let parse_args arglist =
 	Vernacentries.qed_display_script := false;
 	parse rem
     | "-emacs-U" :: rem ->
-	warning "Obsolete option \"-emacs-U\", use -emacs instead.";	
+	warning "Obsolete option \"-emacs-U\", use -emacs instead.";
 	parse ("-emacs" :: rem)
 
     | "-unicode" :: rem -> add_require "Utf8_core"; parse rem

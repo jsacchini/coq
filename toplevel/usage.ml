@@ -62,6 +62,8 @@ let print_usage_channel co command =
 \n  -dump-glob f           dump globalizations in file f (to be used by coqdoc)\
 \n  -with-geoproof (yes|no) to (de)activate special functions for Geoproof within Coqide (default is yes)\
 \n  -impredicative-set     set sort Set impredicative\
+\n  -disable-termination-checking\
+\n                         disable termination and productivity checking\
 \n  -force-load-proofs     load opaque proofs in memory initially\
 
 \n  -lazy-load-proofs      load opaque proofs in memory by necessity (default)\

@@ -69,7 +69,7 @@ let search_guard loc env possible_indexes fixdefs =
   if List.for_all (fun l->1=List.length l) possible_indexes then
     let indexes = Array.of_list (List.map List.hd possible_indexes) in
     let fix = ((indexes, 0),fixdefs) in
-    (try check_fix env fix
+    (try check_fix_if_termination_checking env fix
      with e when Errors.noncritical e ->
        if loc = dummy_loc then raise e else Loc.raise loc e);
     indexes
@@ -448,7 +448,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	      make_judge (mkFix ((indexes,i),fixdecls)) ftys.(i)
 	  | GCoFix i ->
 	      let cofix = (i,(names,ftys,fdefs)) in
-	      (try check_cofix env cofix
+	      (try check_cofix_if_termination_checking env cofix
                with e when Errors.noncritical e -> Loc.raise loc e);
 	      make_judge (mkCoFix cofix) ftys.(i) in
 	inh_conv_coerce_to_tycon loc env evdref fixj tycon
@@ -687,11 +687,11 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 		let cj = match k with
 		  | VMcast ->
                       if not (occur_existential cty || occur_existential tval) then
-		      begin 
-			try 
+		      begin
+			try
 			  ignore (Reduction.vm_conv Reduction.CUMUL env cty tval); cj
-			with Reduction.NotConvertible -> 
-			  error_actual_type_loc loc env !evdref cj tval 
+			with Reduction.NotConvertible ->
+			  error_actual_type_loc loc env !evdref cj tval
 		      end
                       else user_err_loc (loc,"",str "Cannot check cast with vm: unresolved arguments remain.")
 		  | _ -> inh_conv_coerce_to_tycon loc env evdref cj (mk_tycon tval)
@@ -738,7 +738,7 @@ module Pretyping_F (Coercion : Coercion.S) = struct
 	  let tycon = match exptyp with None -> empty_tycon | Some t -> mk_tycon t in
 	  (pretype resolve_classes tycon env evdref lvar c).uj_val
       | IsType ->
-	  (pretype_type resolve_classes empty_valcon env evdref lvar c).utj_val 
+	  (pretype_type resolve_classes empty_valcon env evdref lvar c).utj_val
     in
       resolve_evars env evdref fail_evar resolve_classes;
       let c = if expand_evar then nf_evar !evdref c' else c' in

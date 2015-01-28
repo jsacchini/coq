@@ -182,13 +182,13 @@ let rec execute env evdref cstr =
     | Fix ((vn,i as vni),recdef) ->
         let (_,tys,_ as recdef') = execute_recdef env evdref recdef in
 	let fix = (vni,recdef') in
-        check_fix env fix;
+        check_fix_if_termination_checking env fix;
 	make_judge (mkFix fix) tys.(i)
 
     | CoFix (i,recdef) ->
         let (_,tys,_ as recdef') = execute_recdef env evdref recdef in
         let cofix = (i,recdef') in
-        check_cofix env cofix;
+        check_cofix_if_termination_checking env cofix;
 	make_judge (mkCoFix cofix) tys.(i)
 
     | Sort (Prop c) ->

@@ -152,3 +152,6 @@ let default_inline_level = 100
 let inline_level = ref default_inline_level
 let set_inline_level = (:=) inline_level
 let get_inline_level () = !inline_level
+
+(* Termination/productivity checking *)
+let do_termination_checking = ref true

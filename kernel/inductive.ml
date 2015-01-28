@@ -419,7 +419,7 @@ let spec_of_tree t = lazy
    else Subterm(Strict,Lazy.force t))
 
 let subterm_spec_glb =
-  let glb2 s1 s2 = 
+  let glb2 s1 s2 =
     match s1, s2 with
         s1, Dead_code -> s1
       | Dead_code, s2 -> s2
@@ -478,10 +478,10 @@ let push_fix_renv renv (_,v,_ as recdef) =
 (* Definition and manipulation of the stack *)
 type stack_element = |SClosure of guard_env*constr |SArg of subterm_spec Lazy.t
 
-let push_stack_closures renv l stack = 
+let push_stack_closures renv l stack =
   List.fold_right (fun h b -> (SClosure (renv,h))::b) l stack
 
-let push_stack_args l stack = 
+let push_stack_args l stack =
   List.fold_right (fun h b -> (SArg h)::b) l stack
 
 (******************************)
@@ -502,7 +502,7 @@ let match_inductive ind ra =
    [branches_specif renv c_spec ci] returns an array of x_s specs knowing
    c_spec. *)
 let branches_specif renv c_spec ci =
-  let car = 
+  let car =
     (* We fetch the regular tree associated to the inductive of the match.
        This is just to get the number of constructors (and constructor
        arities) that fit the match branches without forcing c_spec.
@@ -513,7 +513,7 @@ let branches_specif renv c_spec ci =
       Array.map List.length v in
     Array.mapi
       (fun i nca -> (* i+1-th cstructor has arity nca *)
-	 let lvra = lazy 
+	 let lvra = lazy
 	   (match Lazy.force c_spec with
 		Subterm (_,t) when match_inductive ci.ci_ind (dest_recarg t) ->
 		  let vra = Array.of_list (dest_subterms t).(i) in
@@ -524,7 +524,7 @@ let branches_specif renv c_spec ci =
 	      | Dead_code -> Array.create nca Dead_code
 	      | _ -> Array.create nca Not_subterm) in
 	 list_tabulate (fun j -> lazy (Lazy.force lvra).(j)) nca)
-      car 
+      car
 
 (* [subterm_specif renv t] computes the recursive structure of [t] and
    compare its size with the size of the initial recursive argument of
@@ -540,7 +540,7 @@ let rec subterm_specif renv stack t =
 
       | Case (ci,_,c,lbr) ->
 	  let stack' = push_stack_closures renv l stack in
-          let cases_spec = branches_specif renv 
+          let cases_spec = branches_specif renv
 	    (lazy_subterm_specif renv [] c) ci in
           let stl  =
             Array.mapi (fun i br' ->
@@ -641,8 +641,8 @@ let error_partial_apply renv fx =
 let check_one_fix renv recpos def =
   let nfi = Array.length recpos in
 
-  (* Checks if [t] only make valid recursive calls 
-     [stack] is the list of constructor's argument specification and 
+  (* Checks if [t] only make valid recursive calls
+     [stack] is the list of constructor's argument specification and
      arguments than will be applied after reduction.
      example u in t where we have (match .. with |.. => t end) u *)
   let rec check_rec_call renv stack t =
@@ -667,7 +667,7 @@ let check_one_fix renv recpos def =
                   let z = List.nth stack' np in
 	          if not (check_is_subterm (stack_element_specif z)) then
                     begin match z with
-		      |SClosure (z,z') -> error_illegal_rec_call renv glob (z,z') 
+		      |SClosure (z,z') -> error_illegal_rec_call renv glob (z,z')
 		      |SArg _ -> error_partial_apply renv glob
 		    end
               end
@@ -681,15 +681,15 @@ let check_one_fix renv recpos def =
                     with FixGuardError _ ->
                       check_rec_call renv stack (applist(lift p c,l))
               end
-		
+
         | Case (ci,p,c_0,lrest) ->
             List.iter (check_rec_call renv []) (c_0::p::l);
             (* compute the recarg information for the arguments of
                each branch *)
-            let case_spec = branches_specif renv 
+            let case_spec = branches_specif renv
 	      (lazy_subterm_specif renv [] c_0) ci in
 	    let stack' = push_stack_closures renv l stack in
-              Array.iteri (fun k br' -> 
+              Array.iteri (fun k br' ->
 			     let stack_br = push_stack_args case_spec.(k) stack' in
 			     check_rec_call renv stack_br br') lrest
 
@@ -755,7 +755,7 @@ let check_one_fix renv recpos def =
                   List.iter (check_rec_call renv []) l
               | Some c ->
                   try List.iter (check_rec_call renv []) l
-                  with (FixGuardError _) -> 
+                  with (FixGuardError _) ->
 		    check_rec_call renv stack (applist(c,l))
             end
 
@@ -776,7 +776,7 @@ let check_one_fix renv recpos def =
             let renv' = push_var_renv renv (x,a) in
 	      check_nested_fix_body renv' (decr-1) recArgsDecrArg b
 	| _ -> anomaly "Not enough abstractions in fix body"
-	    
+
   in
   check_rec_call renv [] def
 
@@ -831,6 +831,11 @@ let check_fix env ((nvect,_),(names,_,bodies as recdef) as fix) =
       error_ill_formed_rec_body fixenv err names i
 	(push_rec_types recdef env) (judgment_of_fixpoint recdef)
   done
+
+let check_fix_if_termination_checking env fix =
+  if !Flags.do_termination_checking
+  then check_fix env fix
+  else ()
 
 (*
 let cfkey = Profile.declare_profile "check_fix";;
@@ -943,3 +948,8 @@ let check_cofix env (bodynum,(names,types,bodies as recdef)) =
       error_ill_formed_rec_body errenv err names i
 	fixenv (judgment_of_fixpoint recdef)
   done
+
+let check_cofix_if_termination_checking env cofix =
+  if !Flags.do_termination_checking
+  then check_cofix env cofix
+  else ()
